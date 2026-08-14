@@ -29,6 +29,12 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OWNER_JSON = PRIVATE_ROOT / "xhs-full-context-owner-review-v3.json"
 DEFAULT_OWNER_HTML = PRIVATE_ROOT / "xhs-full-context-owner-review-v3.html"
 DEFAULT_OWNER_EXPORT = PRIVATE_ROOT / "xhs-full-context-owner-review-v3.completed.json"
+DEFAULT_IN_PROGRESS_EXPORT = (
+    PRIVATE_ROOT / "xhs-full-context-owner-review-v3.in-progress.json"
+)
+DEFAULT_RECOVERED_NOTES = (
+    PRIVATE_ROOT / "xhs-owner-review-notes-recovered-2026-08-14.json"
+)
 DEFAULT_PROVENANCE = PRIVATE_ROOT / "xhs-full-context-selection-provenance-v3.json"
 DEFAULT_MANIFEST = (
     REPO_ROOT
@@ -127,9 +133,54 @@ def build_owner() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     return owner_packet, provenance, manifest
 
 
-def _render_html(packet: dict[str, Any], export_path: Path) -> bytes:
+def _apply_recovered_notes(
+    packet: dict[str, Any],
+    recovery: dict[str, Any],
+) -> int:
+    if recovery.get("schema_version") != "xhs-owner-review-note-recovery/v1":
+        raise ValueError("unsupported recovered-notes schema")
+    rows = recovery.get("items")
+    if not isinstance(rows, list) or recovery.get("note_count") != len(rows):
+        raise ValueError("recovered-notes count mismatch")
+    items_by_id = {item["owner_item_id"]: item for item in packet["items"]}
+    seen: set[str] = set()
+    for row in rows:
+        owner_item_id = row.get("owner_item_id")
+        if owner_item_id in seen:
+            raise ValueError(f"duplicate recovered note: {owner_item_id}")
+        seen.add(owner_item_id)
+        item = items_by_id.get(owner_item_id)
+        if item is None:
+            raise ValueError(f"unknown recovered-note item: {owner_item_id}")
+        if row.get("candidate") != item["candidate"]:
+            raise ValueError(f"candidate mismatch for {owner_item_id}")
+        reviewer_note = row.get("reviewer_note")
+        if not isinstance(reviewer_note, str) or not reviewer_note.strip():
+            raise ValueError(f"empty recovered note for {owner_item_id}")
+        item["reviewer_note"] = reviewer_note.strip()
+        item["review_note_source"] = recovery["source"]
+        item["review_note_recovered_at"] = recovery["recovered_at"]
+    packet["recovery_summary"] = {
+        "source": recovery["source"],
+        "recovered_at": recovery["recovered_at"],
+        "recovered_note_count": len(rows),
+        "dimensions_or_decisions_inferred": False,
+    }
+    return len(rows)
+
+
+def _render_html(
+    packet: dict[str, Any],
+    export_path: Path,
+    in_progress_path: Path | None = None,
+) -> bytes:
+    if in_progress_path is None:
+        in_progress_path = export_path.with_name(
+            "xhs-full-context-owner-review-v3.in-progress.json"
+        )
     payload = json.dumps(packet, ensure_ascii=False).replace("</", "<\\/")
     export_name = html.escape(export_path.name, quote=True)
+    in_progress_name = html.escape(in_progress_path.name, quote=True)
     dimension_labels = json.dumps(DIMENSION_LABELS, ensure_ascii=False)
     page = f"""<!doctype html>
 <html lang="zh-CN">
@@ -157,9 +208,9 @@ button {{ font: inherit; font-weight: 700; padding: 10px 16px; border: 0; border
 <body><main>
 <h1>小红书 30 条完整上下文负责人审核</h1>
 <p class="muted">单一审核人：项目负责人。逐项判断，不使用总分掩盖失败项。</p>
-<div class="notice">历史发布不等于风格批准；发布状态标记为真，也不等于已经验证发布。本页不会联网、不会发送、不会发布。</div>
+<div class="notice">历史发布不等于风格批准；发布状态标记为真，也不等于已经验证发布。本页不会联网、不会发送、不会发布。未选完下拉框也可以保存当前进度。</div>
 <div id="items"></div>
-<div class="toolbar"><span class="status" id="status">0 / 30 已决定</span><button id="export">校验并导出审核结果</button></div>
+<div class="toolbar"><span class="status" id="status">0 / 30 已决定</span><div><button id="save">保存当前进度</button> <button id="export">校验并导出审核结果</button></div></div>
 </main>
 <script type="application/json" id="packet">{payload}</script>
 <script>
@@ -183,19 +234,25 @@ for (const [index, item] of packet.items.entries()) {{
     const label = document.createElement('label'); label.textContent = dimensionLabels[name] || '未定义审核维度';
     const select = document.createElement('select'); select.dataset.dimension = name;
     select.innerHTML = '<option value="">请选择</option><option value="pass">通过</option><option value="fail">失败</option><option value="not_applicable">不适用</option>';
+    select.value = item.review_dimensions[name] || '';
     label.appendChild(select); grid.appendChild(label);
   }}
   card.appendChild(grid);
   const decisionLabel = document.createElement('label'); decisionLabel.textContent = '负责人决定';
   const decision = document.createElement('select'); decision.dataset.decision = '1';
   decision.innerHTML = '<option value="">请选择</option><option value="accept">接受</option><option value="revise">修改</option><option value="reject">拒绝</option>';
+  decision.value = item.decision || '';
   decisionLabel.appendChild(decision); card.appendChild(decisionLabel);
   const noteLabel = document.createElement('label'); noteLabel.textContent = '审核备注';
-  const note = document.createElement('textarea'); note.dataset.note = '1'; noteLabel.appendChild(note); card.appendChild(noteLabel);
-  decision.addEventListener('change', updateStatus); root.appendChild(card);
+  const note = document.createElement('textarea'); note.dataset.note = '1'; note.value = esc(item.reviewer_note); noteLabel.appendChild(note); card.appendChild(noteLabel);
+  decision.addEventListener('change', updateStatus); note.addEventListener('input', updateStatus); root.appendChild(card);
 }}
-function updateStatus() {{ const done = [...document.querySelectorAll('[data-decision]')].filter(x => x.value).length; document.getElementById('status').textContent = `${{done}} / ${{packet.items.length}} 已决定`; }}
-document.getElementById('export').addEventListener('click', () => {{
+function updateStatus() {{
+  const done = [...document.querySelectorAll('[data-decision]')].filter(x => x.value).length;
+  const notes = [...document.querySelectorAll('[data-note]')].filter(x => x.value.trim()).length;
+  document.getElementById('status').textContent = `${{done}} / ${{packet.items.length}} 已决定 · ${{notes}} 条有备注`;
+}}
+function syncPacket() {{
   const cards = [...document.querySelectorAll('.item')]; const missing = [];
   for (const card of cards) {{
     const item = packet.items[Number(card.dataset.index)];
@@ -207,12 +264,26 @@ document.getElementById('export').addEventListener('click', () => {{
     item.reviewer_note = card.querySelector('[data-note]').value.trim() || null;
     item.reviewed_at = decision ? new Date().toISOString() : null;
   }}
+  return missing;
+}}
+function downloadPacket(filename) {{
+  const blob = new Blob([JSON.stringify(packet, null, 2) + '\\n'], {{type:'application/json'}});
+  const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = filename; link.click(); URL.revokeObjectURL(link.href);
+}}
+document.getElementById('save').addEventListener('click', () => {{
+  syncPacket();
+  packet.owner_review_completed = false; packet.r3_status = 'awaiting_owner_review';
+  packet.in_progress_saved_at = new Date().toISOString();
+  downloadPacket('{in_progress_name}');
+}});
+document.getElementById('export').addEventListener('click', () => {{
+  const missing = syncPacket();
   if (missing.length) {{ alert(`还有 ${{missing.length}} 条未完整判断：${{missing.join(', ')}}`); return; }}
   packet.owner_review_completed = true; packet.r3_status = 'owner_review_completed_pending_acceptance_analysis';
   packet.completed_at = new Date().toISOString();
-  const blob = new Blob([JSON.stringify(packet, null, 2) + '\\n'], {{type:'application/json'}});
-  const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = '{export_name}'; link.click(); URL.revokeObjectURL(link.href);
+  downloadPacket('{export_name}');
 }});
+updateStatus();
 </script></body></html>"""
     return page.encode("utf-8")
 
@@ -222,12 +293,27 @@ def main() -> int:
     parser.add_argument("--owner-json", type=Path, default=DEFAULT_OWNER_JSON)
     parser.add_argument("--owner-html", type=Path, default=DEFAULT_OWNER_HTML)
     parser.add_argument("--completed-export", type=Path, default=DEFAULT_OWNER_EXPORT)
+    parser.add_argument(
+        "--in-progress-export", type=Path, default=DEFAULT_IN_PROGRESS_EXPORT
+    )
+    parser.add_argument("--recovered-notes", type=Path, default=DEFAULT_RECOVERED_NOTES)
     parser.add_argument("--provenance", type=Path, default=DEFAULT_PROVENANCE)
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     args = parser.parse_args()
     packet, provenance, manifest = build_owner()
+    recovered_notes_bytes = None
+    if args.recovered_notes.exists():
+        recovered_notes_bytes = args.recovered_notes.read_bytes()
+        recovered_notes = json.loads(recovered_notes_bytes.decode("utf-8"))
+        manifest["recovered_notes_count"] = _apply_recovered_notes(
+            packet, recovered_notes
+        )
+        manifest["recovered_notes_sha256"] = _sha256(recovered_notes_bytes)
+    else:
+        manifest["recovered_notes_count"] = 0
+        manifest["recovered_notes_sha256"] = None
     owner_json = _json_bytes(packet)
-    owner_html = _render_html(packet, args.completed_export)
+    owner_html = _render_html(packet, args.completed_export, args.in_progress_export)
     provenance_bytes = _json_bytes(provenance)
     manifest["owner_json_sha256"] = _sha256(owner_json)
     manifest["owner_html_sha256"] = _sha256(owner_html)

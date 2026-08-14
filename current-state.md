@@ -224,3 +224,28 @@ slot 2 的侧栏“我”现场 profile id 为 `634c02a1000000001901c0e6`，与�
   `Owner 决定`、`published=true` 可见文案均不存在；
   `required_reviewer_count=1`、`independent_review_required=false`，但这不
   等于 owner 已完成审核或 R3/R4 已批准。
+
+### 13.1 截图备注恢复与未完成进度保存（2026-08-14 11:50–11:54）
+
+- 用户提供 10 张截图，已按候选文本精确绑定回审核项 02、03、04、06、
+  09、12、14、15、23、25。恢复数据只存于
+  `D:\AI\tachikoma\.tmp\xhs-owner-review-notes-recovered-2026-08-14.json`，
+  SHA-256 为
+  `9ca1811955d26d044e032c4705361ca63fbb8bcb4f2e65a02da3f96f83ef594f`；
+  私密备注原文没有进入 Git 或交接文档。
+- 构建器现在按审核项 ID 和候选文本双重校验恢复数据；不匹配、重复、空备注
+  都会失败。页面会预填恢复备注，并增加“保存当前进度”按钮；下拉框未选完
+  也能导出 `xhs-full-context-owner-review-v3.in-progress.json`，完整结果导出仍
+  要求所有维度和负责人决定填写完成。
+- Fresh v1/v2/v3 回归 **13 passed in 10.01s**。重建后读回 10 条备注、0 条
+  负责人决定、0 个已选维度，状态仍为 `awaiting_owner_review`。owner JSON
+  SHA-256 为
+  `a3d19dfeb27e958c6974360d5fe829a7d7dde6cfcd0921f370df4212f401ffd4`，
+  HTML SHA-256 为
+  `44843440159fcc7ea53da1e13f3a18a23b01008d8247f86199698e5723fbdd06`，
+  provenance SHA-256 为
+  `54fd8be589f30e2932c7c645684e235c0e26e2fda126902da978a1951a705df7`；
+  均已写入 hash-only manifest。
+- 没有运行生成模型、联网、发送或发布。截图备注是定性校准证据，不等于
+  R3 完成或 R4 批准；审核项 09 和 23 改变了建议语义，后续仍需重新核对
+  上下文依据、权利和承诺边界。

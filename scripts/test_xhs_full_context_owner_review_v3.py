@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from build_xhs_full_context_owner_review_v3 import (
     DIMENSION_LABELS,
+    _apply_recovered_notes,
     _render_html,
     build_owner,
 )
@@ -32,6 +35,9 @@ def test_owner_html_is_local_self_contained_and_exports_one_completed_json(tmp_p
     assert "负责人审核" in rendered
     assert "项目负责人" in rendered
     assert "负责人决定" in rendered
+    assert "保存当前进度" in rendered
+    assert "未选完下拉框也可以保存当前进度" in rendered
+    assert "xhs-full-context-owner-review-v3.in-progress.json" in rendered
     assert "校验并导出审核结果" in rendered
     assert "内容有上下文依据" in rendered
     assert "语序和逻辑自然" in rendered
@@ -40,6 +46,31 @@ def test_owner_html_is_local_self_contained_and_exports_one_completed_json(tmp_p
     assert "Owner 决定" not in rendered
     assert "reviewer A" not in rendered
     assert "reviewer B" not in rendered
+
+
+def test_recovered_notes_are_candidate_bound_and_do_not_infer_decisions():
+    packet, _, _ = build_owner()
+    item = packet["items"][0]
+    recovery = {
+        "schema_version": "xhs-owner-review-note-recovery/v1",
+        "recovered_at": "2026-08-14T11:50:43+08:00",
+        "source": "user_supplied_screenshots",
+        "note_count": 1,
+        "items": [
+            {
+                "owner_item_id": item["owner_item_id"],
+                "candidate": item["candidate"],
+                "reviewer_note": "这是一条恢复备注。",
+            }
+        ],
+    }
+    assert _apply_recovered_notes(packet, recovery) == 1
+    assert item["reviewer_note"] == "这是一条恢复备注。"
+    assert item["decision"] is None
+    assert all(value is None for value in item["review_dimensions"].values())
+    recovery["items"][0]["candidate"] = "错误候选文本"
+    with pytest.raises(ValueError, match="candidate mismatch"):
+        _apply_recovered_notes(build_owner()[0], recovery)
 
 
 def test_owner_manifest_is_hash_only_and_has_no_private_context():

@@ -1,6 +1,6 @@
 {
   "schema_version": "xhs-full-context-owner-review-manifest/v3",
-  "created_at": "2026-08-14T03:28:15.785506+00:00",
+  "created_at": "2026-08-14T03:54:19.692008+00:00",
   "selected_real_contexts": 30,
   "selected_strata": {
     "prospective_unpublished": 6,
@@ -22,9 +22,9 @@
   "owner_completed_export": "local-private://tachikoma/.tmp/xhs-full-context-owner-review-v3.completed.json",
   "private_selection_provenance": "local-private://tachikoma/.tmp/xhs-full-context-selection-provenance-v3.json",
   "private_acquisition_queue": "local-private://tachikoma/.tmp/xhs-full-context-acquisition-queue-v2.json",
-  "owner_json_sha256": "2035736c962585be29cffdb709554c83f59028d5ac703f2ddfaf19954dd7505e",
-  "owner_html_sha256": "757618f239989040862c74d15b9747dd0441790544a73196c3ecfb98e759099a",
-  "provenance_sha256": "8451f51abc58f601f140924107892089b97cd8d38510fa3829109b45dd4486aa",
+  "owner_json_sha256": "a3d19dfeb27e958c6974360d5fe829a7d7dde6cfcd0921f370df4212f401ffd4",
+  "owner_html_sha256": "44843440159fcc7ea53da1e13f3a18a23b01008d8247f86199698e5723fbdd06",
+  "provenance_sha256": "54fd8be589f30e2932c7c645684e235c0e26e2fda126902da978a1951a705df7",
   "acquisition_queue_sha256": null,
   "owner_review_completed": false,
   "r3_status": "awaiting_owner_review",
@@ -32,5 +32,7 @@
   "generation_executed": false,
   "network_executed": false,
   "publication_executed": false,
-  "publish_allowed": false
+  "publish_allowed": false,
+  "recovered_notes_count": 10,
+  "recovered_notes_sha256": "9ca1811955d26d044e032c4705361ca63fbb8bcb4f2e65a02da3f96f83ef594f"
 }
