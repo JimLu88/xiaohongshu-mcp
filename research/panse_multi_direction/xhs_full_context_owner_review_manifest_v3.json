@@ -1,0 +1,36 @@
+{
+  "schema_version": "xhs-full-context-owner-review-manifest/v3",
+  "created_at": "2026-08-14T02:43:59.745916+00:00",
+  "selected_real_contexts": 30,
+  "selected_strata": {
+    "prospective_unpublished": 6,
+    "retrospective_candidate_publication_unverified": 10,
+    "retrospective_verified_publication": 14
+  },
+  "selected_candidate_origins": {
+    "historical_human_review_candidate": 10,
+    "pending_human_review_packet": 6,
+    "verified_publication_text_exact_prepublish_match": 14
+  },
+  "synthetic_reversal_controls": 12,
+  "reviewer_role": "owner",
+  "required_reviewer_count": 1,
+  "independent_review_required": false,
+  "override_scope": "xhs-30-context-pilot-2026-08-14-only",
+  "owner_packet_json": "local-private://tachikoma/.tmp/xhs-full-context-owner-review-v3.json",
+  "owner_packet_html": "local-private://tachikoma/.tmp/xhs-full-context-owner-review-v3.html",
+  "owner_completed_export": "local-private://tachikoma/.tmp/xhs-full-context-owner-review-v3.completed.json",
+  "private_selection_provenance": "local-private://tachikoma/.tmp/xhs-full-context-selection-provenance-v3.json",
+  "private_acquisition_queue": "local-private://tachikoma/.tmp/xhs-full-context-acquisition-queue-v2.json",
+  "owner_json_sha256": "436b7cb4af66ce8c5d1ded4794bb0fb932dcc2e66af900eb64c20a4766898bfa",
+  "owner_html_sha256": "e64a0d55b6fe08ad32c303186e7056e2ce2f49e7dfd04ad0d0527e7c767ab6a2",
+  "provenance_sha256": "72b7956d5a7033ae5cd6b2c355b54d5a4b161357b58e821737ae71222b17a950",
+  "acquisition_queue_sha256": null,
+  "owner_review_completed": false,
+  "r3_status": "awaiting_owner_review",
+  "stores_note_id_body_comments_images_or_draft": false,
+  "generation_executed": false,
+  "network_executed": false,
+  "publication_executed": false,
+  "publish_allowed": false
+}

@@ -1,0 +1,30 @@
+{
+  "schema_version": "xhs-full-context-independent-blind-review-manifest/v1",
+  "created_at": "2026-08-13T17:19:09.895837+00:00",
+  "eligible_real_contexts": 5,
+  "synthetic_reversal_controls": 12,
+  "context_hashes": [
+    "408e9a2aace8afa2c0920e4ea832ce0bd17ba27ab2ee5384401d1877e078abe5",
+    "42196d53f42ddc22822e27a468f2bc4dcc24ca2d6f642e0f5fc8018534d64c3c",
+    "944b87726e4a71a2821b836312368f1925870d060bc1954fd05809861a69bb3f",
+    "9d990bb08dc4fdf87e919a8e1785ba35a5373ebe64dec42544ba4b02c6ff0eaa",
+    "c42a0ed5b501066f73326fe8ad8ea39ff94e217b0c1b1be418f3473005cf9adf"
+  ],
+  "roles": [
+    "official_explanation",
+    "unknown"
+  ],
+  "private_packet_a": "local-private://tachikoma/.tmp/xhs-full-context-blind-pilot-reviewer-a-v1.json",
+  "private_packet_b": "local-private://tachikoma/.tmp/xhs-full-context-blind-pilot-reviewer-b-v1.json",
+  "packet_a_sha256": "0d60f8254ab515234b2a0aa213ac7a704bfaba4940fd9de4e248fc000ee7546f",
+  "packet_b_sha256": "1c9cff41ffbb6f7ac290c027b36673a6d7da520f723f483e19a0533ce1fc8f6e",
+  "independent_reviews_completed": 0,
+  "minimum_real_context_target": 30,
+  "remaining_real_context_gap": 25,
+  "r3_status": "pilot_ready_awaiting_two_independent_reviewers",
+  "stores_note_body_comments_images_or_draft": false,
+  "generation_executed": false,
+  "network_executed": false,
+  "publication_executed": false,
+  "publish_allowed": false
+}
