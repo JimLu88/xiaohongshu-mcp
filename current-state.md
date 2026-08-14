@@ -195,7 +195,7 @@ slot 2 的侧栏“我”现场 profile id 为 `634c02a1000000001901c0e6`，与�
   批准。`generation_executed=false`、`network_executed=false`、
   `publication_executed=false`、`publish_allowed=false`。
 
-## 13. 单一 Owner 审核 v3（取代当前 A/B 入口）
+## 13. 单一负责人审核 v3（取代当前 A/B 入口）
 
 - 用户在 2026-08-14 10:35 明确要求本批由本人单独审核。该指令只覆盖
   `xhs-30-context-pilot-2026-08-14`，不自动修改其他合同或其他批次的
@@ -205,19 +205,22 @@ slot 2 的侧栏“我”现场 profile id 为 `634c02a1000000001901c0e6`，与�
   无外链的本地页面，逐条展示完整上下文和待审文本，要求每个维度单独
   判断，并导出一份
   `xhs-full-context-owner-review-v3.completed.json`。页面不会联网、发送或
-  发布。
+  发布。2026-08-14 11:28 已将所有界面英文标签改为中文；内部 JSON
+  字段名仍保持稳定，源材料中的品牌缩写和专有名词不作误改。
 - 同步的原始 JSON 为
   `D:\AI\tachikoma\.tmp\xhs-full-context-owner-review-v3.json`，私有
   provenance 为
   `D:\AI\tachikoma\.tmp\xhs-full-context-selection-provenance-v3.json`。
   30 条决策当前全部为空，状态为 `awaiting_owner_review`。
 - JSON SHA-256
-  `436b7cb4af66ce8c5d1ded4794bb0fb932dcc2e66af900eb64c20a4766898bfa`；
+  `2035736c962585be29cffdb709554c83f59028d5ac703f2ddfaf19954dd7505e`；
   HTML SHA-256
-  `e64a0d55b6fe08ad32c303186e7056e2ce2f49e7dfd04ad0d0527e7c767ab6a2`；
+  `757618f239989040862c74d15b9747dd0441790544a73196c3ecfb98e759099a`；
   provenance SHA-256
-  `72b7956d5a7033ae5cd6b2c355b54d5a4b161357b58e821737ae71222b17a950`。
+  `8451f51abc58f601f140924107892089b97cd8d38510fa3829109b45dd4486aa`。
   三者均与 hash-only v3 manifest 一致。
-- Fresh v1/v2/v3 回归 **12 passed in 0.50s**。HTML 无外部 URL；
+- Fresh v1/v2/v3 回归 **12 passed in 0.82s**。HTML 无外部 URL；中文标题、
+  中文维度标签和中文负责人决定均已读回，旧的 `Owner 审核`、
+  `Owner 决定`、`published=true` 可见文案均不存在；
   `required_reviewer_count=1`、`independent_review_required=false`，但这不
   等于 owner 已完成审核或 R3/R4 已批准。

@@ -37,6 +37,19 @@ DEFAULT_MANIFEST = (
     / "xhs_full_context_owner_review_manifest_v3.json"
 )
 
+DIMENSION_LABELS = {
+    "source_grounded": "内容有上下文依据",
+    "speaking_position_correct": "说话身份和位置恰当",
+    "speech_act_fit": "表达目的符合互动场景",
+    "teacher_or_judge_posture_absent": "没有老师或评委口吻",
+    "source_restatement_absent": "没有复述原文或图片",
+    "fabricated_firsthand_absent": "没有虚构亲身经历",
+    "question_still_unanswered": "如有提问，问题尚未被回答",
+    "ordinary_order_and_logic": "语序和逻辑自然",
+    "protected_spans_preserved": "数字、名称等受保护内容准确",
+    "near_copy_safe": "没有近似照搬风险",
+}
+
 
 def build_owner() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     packet_a, _, queue, provenance_v2, source_manifest = build_v2(
@@ -48,7 +61,7 @@ def build_owner() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     for index, item in enumerate(packet_a["items"], start=1):
         owner_item = dict(item)
         owner_item.pop("blind_id", None)
-        owner_item["owner_item_id"] = f"OWNER-{index:02d}"
+        owner_item["owner_item_id"] = f"审核项-{index:02d}"
         items.append(owner_item)
     owner_packet = {
         "schema_version": "xhs-full-context-owner-review/v3",
@@ -117,12 +130,13 @@ def build_owner() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
 def _render_html(packet: dict[str, Any], export_path: Path) -> bytes:
     payload = json.dumps(packet, ensure_ascii=False).replace("</", "<\\/")
     export_name = html.escape(export_path.name, quote=True)
+    dimension_labels = json.dumps(DIMENSION_LABELS, ensure_ascii=False)
     page = f"""<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>小红书 30 条完整上下文 Owner 审核</title>
+<title>小红书 30 条完整上下文负责人审核</title>
 <style>
 :root {{ color-scheme: light; font-family: system-ui, "Microsoft YaHei", sans-serif; }}
 body {{ margin: 0; background: #f5f3ef; color: #282522; }}
@@ -141,17 +155,18 @@ button {{ font: inherit; font-weight: 700; padding: 10px 16px; border: 0; border
 </style>
 </head>
 <body><main>
-<h1>小红书 30 条完整上下文 Owner 审核</h1>
-<p class="muted">单一审核人：项目 Owner。逐维度判断，不使用总分补偿失败项。</p>
-<div class="notice">历史发布不等于风格批准；标记 published=true 也不等于已验证发布。本页不会联网、不会发送、不会发布。</div>
+<h1>小红书 30 条完整上下文负责人审核</h1>
+<p class="muted">单一审核人：项目负责人。逐项判断，不使用总分掩盖失败项。</p>
+<div class="notice">历史发布不等于风格批准；发布状态标记为真，也不等于已经验证发布。本页不会联网、不会发送、不会发布。</div>
 <div id="items"></div>
-<div class="toolbar"><span class="status" id="status">0 / 30 已决定</span><button id="export">校验并导出 {export_name}</button></div>
+<div class="toolbar"><span class="status" id="status">0 / 30 已决定</span><button id="export">校验并导出审核结果</button></div>
 </main>
 <script type="application/json" id="packet">{payload}</script>
 <script>
 const packet = JSON.parse(document.getElementById('packet').textContent);
 const root = document.getElementById('items');
 const dimensions = Object.keys(packet.items[0].review_dimensions);
+const dimensionLabels = {dimension_labels};
 const esc = value => String(value ?? '');
 for (const [index, item] of packet.items.entries()) {{
   const card = document.createElement('section'); card.className = 'item'; card.dataset.index = index;
@@ -165,13 +180,13 @@ for (const [index, item] of packet.items.entries()) {{
   const candidate = document.createElement('p'); candidate.className = 'candidate'; candidate.textContent = item.candidate; card.appendChild(candidate);
   const grid = document.createElement('div'); grid.className = 'grid';
   for (const name of dimensions) {{
-    const label = document.createElement('label'); label.textContent = name;
+    const label = document.createElement('label'); label.textContent = dimensionLabels[name] || '未定义审核维度';
     const select = document.createElement('select'); select.dataset.dimension = name;
     select.innerHTML = '<option value="">请选择</option><option value="pass">通过</option><option value="fail">失败</option><option value="not_applicable">不适用</option>';
     label.appendChild(select); grid.appendChild(label);
   }}
   card.appendChild(grid);
-  const decisionLabel = document.createElement('label'); decisionLabel.textContent = 'Owner 决定';
+  const decisionLabel = document.createElement('label'); decisionLabel.textContent = '负责人决定';
   const decision = document.createElement('select'); decision.dataset.decision = '1';
   decision.innerHTML = '<option value="">请选择</option><option value="accept">接受</option><option value="revise">修改</option><option value="reject">拒绝</option>';
   decisionLabel.appendChild(decision); card.appendChild(decisionLabel);

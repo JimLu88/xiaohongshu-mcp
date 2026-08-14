@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import json
 
-from build_xhs_full_context_owner_review_v3 import _render_html, build_owner
+from build_xhs_full_context_owner_review_v3 import (
+    DIMENSION_LABELS,
+    _render_html,
+    build_owner,
+)
 
 
 def test_owner_packet_is_single_reviewer_and_has_30_pending_items(tmp_path):
@@ -15,6 +19,8 @@ def test_owner_packet_is_single_reviewer_and_has_30_pending_items(tmp_path):
     assert len(provenance["records"]) == 30
     assert all(item["decision"] is None for item in packet["items"])
     assert all("blind_id" not in item for item in packet["items"])
+    assert all(item["owner_item_id"].startswith("审核项-") for item in packet["items"])
+    assert set(DIMENSION_LABELS) == set(packet["items"][0]["review_dimensions"])
     assert manifest["r3_status"] == "awaiting_owner_review"
 
 
@@ -23,9 +29,15 @@ def test_owner_html_is_local_self_contained_and_exports_one_completed_json(tmp_p
     rendered = _render_html(packet, tmp_path / "owner.completed.json").decode("utf-8")
     assert "https://" not in rendered
     assert "http://" not in rendered
-    assert "Owner 审核" in rendered
-    assert "校验并导出" in rendered
-    assert "owner.completed.json" in rendered
+    assert "负责人审核" in rendered
+    assert "项目负责人" in rendered
+    assert "负责人决定" in rendered
+    assert "校验并导出审核结果" in rendered
+    assert "内容有上下文依据" in rendered
+    assert "语序和逻辑自然" in rendered
+    assert "published=true" not in rendered
+    assert "Owner 审核" not in rendered
+    assert "Owner 决定" not in rendered
     assert "reviewer A" not in rendered
     assert "reviewer B" not in rendered
 
