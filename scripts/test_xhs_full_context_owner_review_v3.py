@@ -7,6 +7,7 @@ import pytest
 from build_xhs_full_context_owner_review_v3 import (
     DIMENSION_LABELS,
     _apply_recovered_notes,
+    _apply_owner_adjudication,
     _render_html,
     build_owner,
 )
@@ -71,6 +72,58 @@ def test_recovered_notes_are_candidate_bound_and_do_not_infer_decisions():
     recovery["items"][0]["candidate"] = "错误候选文本"
     with pytest.raises(ValueError, match="candidate mismatch"):
         _apply_recovered_notes(build_owner()[0], recovery)
+
+
+def test_owner_adjudication_fills_every_dimension_and_preserves_hard_gate():
+    packet, _, _ = build_owner()
+    rows = []
+    for item in packet["items"]:
+        rows.append(
+            {
+                "owner_item_id": item["owner_item_id"],
+                "decision": "accept",
+                "question_applicable": False,
+                "protected_spans_applicable": False,
+                "fail_dimensions": [],
+                "reason_codes": [],
+            }
+        )
+    rows[0].update(
+        decision="revise",
+        fail_dimensions=["ordinary_order_and_logic"],
+        reason_codes=["ordinary_word_order_awkward"],
+    )
+    rows[1].update(
+        decision="reject",
+        fail_dimensions=["source_grounded"],
+        reason_codes=["unsupported_absolute_generalization"],
+    )
+    adjudication = {
+        "schema_version": "xhs-owner-review-adjudication/v1",
+        "authorized_at": "2026-08-14T12:16:14+08:00",
+        "authorization_source": "current_user_instruction",
+        "inference_basis": "ten_owner_notes_apply_to_all_thirty_items",
+        "human_note_count": 10,
+        "item_count": 30,
+        "completion_mode": "owner_authorized_model_inference_from_human_notes",
+        "requires_owner_readback_before_r4_approval": True,
+        "items": rows,
+    }
+    counts = _apply_owner_adjudication(packet, adjudication)
+    assert counts == {"accept": 28, "revise": 1, "reject": 1}
+    assert packet["owner_review_completed"] is True
+    assert packet["r3_status"] == (
+        "owner_review_completed_pending_acceptance_analysis"
+    )
+    assert all(
+        value in {"pass", "fail", "not_applicable"}
+        for item in packet["items"]
+        for value in item["review_dimensions"].values()
+    )
+    assert packet["items"][1]["review_dimensions"]["source_grounded"] == "fail"
+    adjudication["items"][1]["decision"] = "accept"
+    with pytest.raises(ValueError, match="accepted item has failures"):
+        _apply_owner_adjudication(build_owner()[0], adjudication)
 
 
 def test_owner_manifest_is_hash_only_and_has_no_private_context():

@@ -35,6 +35,9 @@ DEFAULT_IN_PROGRESS_EXPORT = (
 DEFAULT_RECOVERED_NOTES = (
     PRIVATE_ROOT / "xhs-owner-review-notes-recovered-2026-08-14.json"
 )
+DEFAULT_OWNER_ADJUDICATION = (
+    PRIVATE_ROOT / "xhs-owner-review-adjudication-2026-08-14.json"
+)
 DEFAULT_PROVENANCE = PRIVATE_ROOT / "xhs-full-context-selection-provenance-v3.json"
 DEFAULT_MANIFEST = (
     REPO_ROOT
@@ -54,6 +57,13 @@ DIMENSION_LABELS = {
     "ordinary_order_and_logic": "语序和逻辑自然",
     "protected_spans_preserved": "数字、名称等受保护内容准确",
     "near_copy_safe": "没有近似照搬风险",
+}
+
+HARD_FAILURE_DIMENSIONS = {
+    "source_grounded",
+    "fabricated_firsthand_absent",
+    "protected_spans_preserved",
+    "near_copy_safe",
 }
 
 
@@ -169,6 +179,68 @@ def _apply_recovered_notes(
     return len(rows)
 
 
+def _apply_owner_adjudication(
+    packet: dict[str, Any],
+    adjudication: dict[str, Any],
+) -> dict[str, int]:
+    if adjudication.get("schema_version") != "xhs-owner-review-adjudication/v1":
+        raise ValueError("unsupported owner-adjudication schema")
+    rows = adjudication.get("items")
+    if not isinstance(rows, list) or adjudication.get("item_count") != len(rows):
+        raise ValueError("owner-adjudication count mismatch")
+    items_by_id = {item["owner_item_id"]: item for item in packet["items"]}
+    row_ids = [row.get("owner_item_id") for row in rows]
+    if len(row_ids) != len(set(row_ids)):
+        raise ValueError("duplicate owner-adjudication item")
+    if set(row_ids) != set(items_by_id):
+        raise ValueError("owner-adjudication item set mismatch")
+    valid_dimensions = set(DIMENSION_LABELS)
+    decision_counts = {"accept": 0, "revise": 0, "reject": 0}
+    for row in rows:
+        owner_item_id = row["owner_item_id"]
+        decision = row.get("decision")
+        if decision not in decision_counts:
+            raise ValueError(f"invalid owner decision for {owner_item_id}")
+        fail_dimensions = set(row.get("fail_dimensions") or [])
+        if not fail_dimensions <= valid_dimensions:
+            raise ValueError(f"invalid failure dimension for {owner_item_id}")
+        if decision == "accept" and fail_dimensions:
+            raise ValueError(f"accepted item has failures: {owner_item_id}")
+        if decision in {"revise", "reject"} and not fail_dimensions:
+            raise ValueError(f"non-accepted item has no failure: {owner_item_id}")
+        if decision == "reject" and not (
+            fail_dimensions & HARD_FAILURE_DIMENSIONS
+        ):
+            raise ValueError(f"rejected item has no hard failure: {owner_item_id}")
+        dimensions = dict.fromkeys(valid_dimensions, "pass")
+        if not row.get("question_applicable"):
+            dimensions["question_still_unanswered"] = "not_applicable"
+        if not row.get("protected_spans_applicable"):
+            dimensions["protected_spans_preserved"] = "not_applicable"
+        for dimension in fail_dimensions:
+            dimensions[dimension] = "fail"
+        item = items_by_id[owner_item_id]
+        item["review_dimensions"] = dimensions
+        item["decision"] = decision
+        item["reason_codes"] = list(row.get("reason_codes") or [])
+        item["reviewed_at"] = adjudication["authorized_at"]
+        item["adjudication_source"] = adjudication["completion_mode"]
+        decision_counts[decision] += 1
+    packet["owner_review_completed"] = True
+    packet["r3_status"] = "owner_review_completed_pending_acceptance_analysis"
+    packet["completed_at"] = adjudication["authorized_at"]
+    packet["review_completion_provenance"] = {
+        "authorization_source": adjudication["authorization_source"],
+        "inference_basis": adjudication["inference_basis"],
+        "human_note_count": adjudication["human_note_count"],
+        "completion_mode": adjudication["completion_mode"],
+        "requires_owner_readback_before_r4_approval": adjudication[
+            "requires_owner_readback_before_r4_approval"
+        ],
+    }
+    return decision_counts
+
+
 def _render_html(
     packet: dict[str, Any],
     export_path: Path,
@@ -271,8 +343,9 @@ function downloadPacket(filename) {{
   const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = filename; link.click(); URL.revokeObjectURL(link.href);
 }}
 document.getElementById('save').addEventListener('click', () => {{
-  syncPacket();
-  packet.owner_review_completed = false; packet.r3_status = 'awaiting_owner_review';
+  const missing = syncPacket();
+  packet.owner_review_completed = missing.length === 0;
+  packet.r3_status = missing.length ? 'awaiting_owner_review' : 'owner_review_completed_pending_acceptance_analysis';
   packet.in_progress_saved_at = new Date().toISOString();
   downloadPacket('{in_progress_name}');
 }});
@@ -297,6 +370,9 @@ def main() -> int:
         "--in-progress-export", type=Path, default=DEFAULT_IN_PROGRESS_EXPORT
     )
     parser.add_argument("--recovered-notes", type=Path, default=DEFAULT_RECOVERED_NOTES)
+    parser.add_argument(
+        "--owner-adjudication", type=Path, default=DEFAULT_OWNER_ADJUDICATION
+    )
     parser.add_argument("--provenance", type=Path, default=DEFAULT_PROVENANCE)
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     args = parser.parse_args()
@@ -312,6 +388,22 @@ def main() -> int:
     else:
         manifest["recovered_notes_count"] = 0
         manifest["recovered_notes_sha256"] = None
+    adjudication_bytes = None
+    if args.owner_adjudication.exists():
+        adjudication_bytes = args.owner_adjudication.read_bytes()
+        adjudication = json.loads(adjudication_bytes.decode("utf-8"))
+        decision_counts = _apply_owner_adjudication(packet, adjudication)
+        manifest["adjudication_sha256"] = _sha256(adjudication_bytes)
+        manifest["decision_counts"] = decision_counts
+        manifest["owner_review_completed"] = True
+        manifest["r3_status"] = packet["r3_status"]
+        manifest["completion_mode"] = adjudication["completion_mode"]
+        manifest["requires_owner_readback_before_r4_approval"] = adjudication[
+            "requires_owner_readback_before_r4_approval"
+        ]
+    else:
+        manifest["adjudication_sha256"] = None
+        manifest["decision_counts"] = {"accept": 0, "revise": 0, "reject": 0}
     owner_json = _json_bytes(packet)
     owner_html = _render_html(packet, args.completed_export, args.in_progress_export)
     provenance_bytes = _json_bytes(provenance)
@@ -328,6 +420,7 @@ def main() -> int:
         "reviewer_role": manifest["reviewer_role"],
         "required_reviewer_count": manifest["required_reviewer_count"],
         "r3_status": manifest["r3_status"],
+        "decision_counts": manifest["decision_counts"],
         "generation_executed": False,
         "network_executed": False,
         "publication_executed": False,
