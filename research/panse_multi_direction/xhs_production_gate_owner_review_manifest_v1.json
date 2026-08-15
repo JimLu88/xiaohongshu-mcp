@@ -1,0 +1,49 @@
+{
+  "schema_version": "xhs-production-gate-owner-review-manifest/v1",
+  "created_at": "2026-08-15T08:03:48.546237+00:00",
+  "existing_owner_authorized_context_count": 30,
+  "additional_context_count": 10,
+  "combined_context_count_after_owner_approval": 40,
+  "additional_context_sha256": [
+    "01ddacce18046abb4297962823f2663cc57554c479444985f7fdae01972c05df",
+    "1b93bc2e4c00969c52dbb8cf8d5aedece9b19660f57b000349b650af351abd66",
+    "253d1a63abafe39ac170a1c5edd850bf8051b546bc5e9f5605c60d5df9050675",
+    "25f0517550277858cf80186c217e3a8db38e9812edb97616bf86b2b80457b880",
+    "2767e9fe09cfb7fb1eaee23ba94d3a3b4ec89ecc76907fc5e68b6de8ddf7d151",
+    "2bc9165c5d69a6b98c49401b63acbf704445a4907381762650ecc09ba96d4d02",
+    "3694b4ef949c3307f5f69359b97d38ca82c5d5601560118bf7eb539eef471764",
+    "38225fb3d5570aec28e4c500027e81927572ce2d2874cf34a99c63e6a4690028",
+    "45b23fd3986133f30cdc82520457d9bd097b322ef16e786d7ed6b5f131fca4dd",
+    "61744654d0997965425ad9b4636dbe32882527fc1e187c8c81813ca730e015f0"
+  ],
+  "role_counts": {
+    "evaluation_judgment": 2,
+    "global_design_observer": 1,
+    "official_explanation": 4,
+    "space_advisor": 1,
+    "stylist": 2
+  },
+  "mode_counts": {
+    "light_humor_or_neutral": 2,
+    "soft_observation": 1,
+    "support_only": 7
+  },
+  "recommendation_counts": {
+    "accept": 8,
+    "revise": 2
+  },
+  "official_explanation_covered": true,
+  "principal_sincere_signed_evidence_status": "owner_evidence_required",
+  "private_packet_locator": "local-private://tachikoma/.tmp/xhs-production-gate-owner-review-v1.json",
+  "private_packet_sha256": "a2b94dbf63127e94c23f07c3594deb28f342e202cdb6829cfd1099e910f23845",
+  "private_html_locator": "local-private://tachikoma/.tmp/xhs-production-gate-owner-review-v1.html",
+  "private_html_sha256": "c5cdde1803f6cf855aa33454a8681f46134c239441d5bc64b6bc3876f0b080e0",
+  "stores_source_text_or_candidate": false,
+  "model_recommendations_are_owner_decisions": false,
+  "owner_review_complete": false,
+  "production_contract_updated": false,
+  "generation_executed": false,
+  "network_executed": false,
+  "publication_executed": false,
+  "publish_allowed": false
+}
