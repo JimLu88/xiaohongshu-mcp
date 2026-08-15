@@ -380,7 +380,7 @@ label{{display:block;font-weight:650}}select,textarea,input{{width:100%;font:inh
 <p>现有 30 条保持不变。下面是额外 10 条真实完整上下文；黄色区域是模型建议，不是你的决定。</p>
 <button id='adopt'>全部采用模型建议</button><button id='save'>保存当前进度</button><button id='export'>导出完成结果</button>
 <strong id='status'></strong></header><main id='root'></main>
-<section><h2>负责人真实参与依据</h2><p>只有确实由负责人参与的节点或取舍才能进入 <code>principal_sincere_signed</code>。</p>
+<section><h2>负责人真实参与依据</h2><p>只有确实由负责人参与的节点或取舍，才能进入“负责人实名真诚表达”语气。</p>
 <label>真实参与事实<textarea id='principalFact' rows='3'></textarea></label>
 <label>可公开的简短表述<textarea id='principalSummary' rows='3'></textarea></label>
 <label>确认事实真实<select id='principalConfirm'><option value=''>请选择</option><option value='true'>确认</option><option value='false'>不确认</option></select></label></section>
