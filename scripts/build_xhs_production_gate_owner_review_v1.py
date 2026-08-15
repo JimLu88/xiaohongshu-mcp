@@ -366,40 +366,120 @@ def build_packet() -> tuple[dict[str, Any], dict[str, Any]]:
 def render_html(packet: dict[str, Any], export_path: Path) -> str:
     payload = json.dumps(packet, ensure_ascii=False).replace("</", "<\\/")
     labels = json.dumps(DIMENSION_LABELS, ensure_ascii=False)
+    role_labels = {
+        "official_explanation": "官方说明",
+        "stylist": "家居风格观察",
+        "evaluation_judgment": "产品体验判断",
+        "space_advisor": "空间使用建议",
+        "global_design_observer": "海外设计观察",
+    }
+    mode_labels = {
+        "support_only": "具体支持",
+        "curiosity_question": "承接后提问",
+        "soft_observation": "日常观察",
+        "light_humor_or_neutral": "轻松回应",
+    }
+    decision_labels = {"accept": "接受", "revise": "修改", "reject": "拒绝"}
+    reason_labels = {
+        "missing_household_daily_landing": "表达落点不够自然，需要改得更像普通评论",
+        "advisor_posture": "有建议别人怎么做的口吻，需要去掉顾问感",
+    }
+
+    def escaped(value: Any) -> str:
+        return html.escape(str(value or ""), quote=True)
+
+    def select_options(values: tuple[tuple[str, str], ...], selected: Any) -> str:
+        result = ["<option value=''>请选择</option>"]
+        for value, label in values:
+            marker = " selected" if value == selected else ""
+            result.append(f"<option value='{value}'{marker}>{label}</option>")
+        return "".join(result)
+
+    item_sections: list[str] = []
+    for index, item in enumerate(packet["items"]):
+        recommendation = item["model_recommendation"]
+        reason_text = "、".join(
+            reason_labels.get(code, "需要结合上下文复核")
+            for code in recommendation.get("reason_codes", [])
+        ) or "未发现需要修改的规则问题"
+        dimension_fields = []
+        for name in DIMENSIONS:
+            current = item.get("owner_review_dimensions", {}).get(name)
+            dimension_fields.append(
+                "<label>"
+                f"{escaped(DIMENSION_LABELS[name])}"
+                f"<select data-dim='{escaped(name)}'>"
+                f"{select_options((('pass', '通过'), ('fail', '不通过'), ('not_applicable', '不适用')), current)}"
+                "</select></label>"
+            )
+        comments = item.get("context", {}).get("visible_comments") or []
+        comments_html = "<br>".join(escaped(comment) for comment in comments) or "没有可见评论"
+        item_sections.append(
+            f"<section class='review-item' data-i='{index}' data-item-id='{escaped(item['owner_item_id'])}'>"
+            f"<h2>{escaped(item['owner_item_id'])} · {escaped(role_labels.get(item.get('declared_role'), '普通评论'))}</h2>"
+            f"<p class='mode'>互动方式：{escaped(mode_labels.get(item.get('declared_interaction_mode'), '结合上下文判断'))}</p>"
+            "<div class='context-block'>"
+            f"<h3>原帖标题</h3><p>{escaped(item.get('context', {}).get('title'))}</p>"
+            f"<h3>帖子正文（审核上下文）</h3><p class='long-text'>{escaped(item.get('context', {}).get('body'))}</p>"
+            f"<h3>当前可见评论</h3><p class='long-text'>{comments_html}</p>"
+            "</div>"
+            f"<h3>拟发布评论</h3><p class='candidate'>{escaped(item.get('candidate'))}</p>"
+            f"<div class='recommend'><strong>模型建议：{escaped(decision_labels.get(recommendation.get('decision'), '复核'))}</strong>"
+            f"<br>{escaped(reason_text)}</div>"
+            "<label class='owner-decision'>你的决定"
+            f"<select data-decision>{select_options((('accept', '接受'), ('revise', '修改'), ('reject', '拒绝')), item.get('owner_decision'))}</select>"
+            "</label>"
+            "<details><summary>展开 10 项审核维度</summary>"
+            f"<div class='grid'>{''.join(dimension_fields)}</div></details>"
+            f"<label>审核备注<textarea data-note rows='2'>{escaped(item.get('owner_note'))}</textarea></label>"
+            "</section>"
+        )
+    static_items = "".join(item_sections)
     return f"""<!doctype html><html lang='zh-CN'><head><meta charset='utf-8'>
 <meta name='viewport' content='width=device-width,initial-scale=1'>
 <title>小红书生产门补充审核</title><style>
 body{{font:17px/1.6 system-ui;margin:24px auto;max-width:1180px;color:#172033;background:#f5f2ed}}
 header,section{{background:#fff;border:1px solid #d9d3cb;border-radius:14px;padding:18px 22px;margin:14px 0}}
-h1{{font-size:30px}}h2{{font-size:21px}}.context{{background:#f7f6f4;padding:12px;white-space:pre-wrap}}
-.candidate{{border-left:4px solid #8066ff;padding:10px 14px}}.grid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}}
-label{{display:block;font-weight:650}}select,textarea,input{{width:100%;font:inherit;padding:9px;box-sizing:border-box}}
-.recommend{{background:#fff6dc;padding:10px;border-radius:8px}}button{{min-height:48px;padding:0 16px;margin:5px}}
+h1{{font-size:30px}}h2{{font-size:22px;margin-bottom:4px}}h3{{font-size:17px;margin:14px 0 4px}}
+.guide{{background:#edf7ef;border-left:5px solid #2f855a;padding:12px 14px}}.mode{{color:#5d6675;margin-top:0}}
+.context-block{{background:#f7f6f4;padding:12px 14px;border-radius:10px}}.long-text{{white-space:pre-wrap}}
+.candidate{{border-left:4px solid #8066ff;padding:10px 14px;background:#faf8ff}}.grid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}}
+label{{display:block;font-weight:650;margin-top:12px}}select,textarea,input{{width:100%;font:inherit;padding:9px;box-sizing:border-box}}
+.recommend{{background:#fff6dc;padding:10px;border-radius:8px;margin:12px 0}}button{{min-height:48px;padding:0 16px;margin:5px}}
+.owner-decision{{font-size:18px}}details{{margin:14px 0}}summary{{cursor:pointer;font-weight:700;min-height:48px;display:flex;align-items:center}}
+#status{{display:block;margin-top:8px;color:#285943}}.review-item{{scroll-margin-top:12px}}
 @media(max-width:720px){{.grid{{grid-template-columns:1fr}}body{{margin:10px}}}}
 </style></head><body><header><h1>小红书 40 条生产门补充审核</h1>
-<p>现有 30 条保持不变。下面是额外 10 条真实完整上下文；黄色区域是模型建议，不是你的决定。</p>
-<button id='adopt'>全部采用模型建议</button><button id='save'>保存当前进度</button><button id='export'>导出完成结果</button>
-<strong id='status'></strong></header><main id='root'></main>
+<p>现有 30 条保持不变。下面直接显示额外 10 条真实完整上下文；黄色区域是模型建议，不是你的决定。</p>
+<p class='guide'><strong>你只需要重点看第 33、36 条。</strong>其余 8 条模型建议为“接受”。点击按钮会先填入建议，你仍可逐条修改。</p>
+<button id='adopt' type='button'>全部采用模型建议</button><button id='save' type='button'>下载当前进度</button><button id='export' type='button'>导出完成结果</button>
+<strong id='status' role='status' aria-live='polite'>页面已显示 10 条审核内容</strong></header><main id='root'>{static_items}</main>
 <section><h2>负责人真实参与依据</h2><p>只有确实由负责人参与的节点或取舍，才能进入“负责人实名真诚表达”语气。</p>
 <label>真实参与事实<textarea id='principalFact' rows='3'></textarea></label>
 <label>可公开的简短表述<textarea id='principalSummary' rows='3'></textarea></label>
-<label>确认事实真实<select id='principalConfirm'><option value=''>请选择</option><option value='true'>确认</option><option value='false'>不确认</option></select></label></section>
+<label>确认事实真实<select id='principalConfirm'><option value=''>请选择</option><option value='true'>确认</option><option value='false'>不确认</option></select></label>
+<button id='noPrincipal' type='button'>没有可公开的负责人亲身参与事实</button></section>
 <section><h2>生产合同决定</h2><label>批准这 10 条审核<select id='approve10'><option value=''>请选择</option><option value='true'>批准</option><option value='false'>不批准</option></select></label>
 <label>批准负责人身份依据<select id='approvePrincipal'><option value=''>请选择</option><option value='true'>批准</option><option value='false'>不批准</option></select></label>
 <label>批准切换生产合同<select id='approveSwitch'><option value=''>请选择</option><option value='true'>批准</option><option value='false'>不批准</option></select></label></section>
 <script>const packet={payload};const labels={labels};const key='xhs-production-gate-owner-review-v1';
-const root=document.getElementById('root');
-function esc(value){{return String(value??'').replace(/[&<>"']/g,ch=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[ch]))}}
-function render(){{root.innerHTML='';packet.items.forEach((item,i)=>{{const s=document.createElement('section');s.dataset.i=i;
-s.innerHTML=`<h2>${{esc(item.owner_item_id)}} · ${{esc(item.declared_role)}}</h2><p>${{esc(item.declared_interaction_mode)}} · ${{esc(item.comment_direction_id)}}</p><div class='context'><b>标题</b>：${{esc(item.context.title)}}\n<b>正文</b>：${{esc(item.context.body)}}\n<b>可见评论</b>：${{esc(item.context.visible_comments.join(' / '))}}</div><p class='candidate'>${{esc(item.candidate)}}</p><div class='recommend'>模型建议：${{esc(item.model_recommendation.decision)}}；${{esc(item.model_recommendation.reason_codes.join('、')||'未发现规则命中')}}</div><label>负责人决定<select data-decision><option value=''>请选择</option><option value='accept'>接受</option><option value='revise'>修改</option><option value='reject'>拒绝</option></select></label><div class='grid' data-dims></div><label>备注<textarea data-note rows='2'></textarea></label>`;
-const dims=s.querySelector('[data-dims]');Object.keys(labels).forEach(name=>{{const l=document.createElement('label');l.textContent=labels[name];l.innerHTML+=`<select data-dim='${{name}}'><option value=''>请选择</option><option value='pass'>通过</option><option value='fail'>不通过</option><option value='not_applicable'>不适用</option></select>`;dims.appendChild(l)}});root.appendChild(s)}});bind();update()}}
-function bind(){{document.querySelectorAll('select,textarea,input').forEach(x=>x.addEventListener('change',update));document.querySelectorAll('textarea').forEach(x=>x.addEventListener('input',update))}}
-function collect(){{packet.items.forEach((item,i)=>{{const s=document.querySelector(`section[data-i='${{i}}']`);item.owner_decision=s.querySelector('[data-decision]').value||null;Object.keys(labels).forEach(k=>item.owner_review_dimensions[k]=s.querySelector(`[data-dim='${{k}}']`).value||null);item.owner_note=s.querySelector('[data-note]').value||null;item.reviewed_at=item.owner_decision?new Date().toISOString():null}});packet.principal_sincere_signed_evidence.verified_real_participation_fact=principalFact.value||null;packet.principal_sincere_signed_evidence.allowed_public_summary=principalSummary.value||null;packet.principal_sincere_signed_evidence.owner_confirms_authentic_participation=principalConfirm.value===''?null:principalConfirm.value==='true';packet.production_switch.owner_approves_additional_10=approve10.value===''?null:approve10.value==='true';packet.production_switch.owner_approves_principal_voice_evidence=approvePrincipal.value===''?null:approvePrincipal.value==='true';packet.production_switch.owner_approves_production_contract_switch=approveSwitch.value===''?null:approveSwitch.value==='true';return packet}}
-function update(){{collect();const done=packet.items.filter(x=>x.owner_decision&&Object.values(x.owner_review_dimensions).every(Boolean)).length;status.textContent=`已完成 ${{done}}/10`;localStorage.setItem(key,JSON.stringify(packet))}}
+const root=document.getElementById('root');const statusBox=document.getElementById('status');
+const principalFactBox=document.getElementById('principalFact');const principalSummaryBox=document.getElementById('principalSummary');
+const principalConfirmBox=document.getElementById('principalConfirm');const approve10Box=document.getElementById('approve10');
+const approvePrincipalBox=document.getElementById('approvePrincipal');const approveSwitchBox=document.getElementById('approveSwitch');
+const reviewSections=Array.from(root.querySelectorAll('section[data-i]'));
+function booleanValue(element){{return element.value===''?null:element.value==='true'}}
+function collect(){{packet.items.forEach((item,i)=>{{const s=reviewSections[i];if(!s)return;item.owner_decision=s.querySelector('[data-decision]').value||null;Object.keys(labels).forEach(k=>item.owner_review_dimensions[k]=s.querySelector(`[data-dim='${{k}}']`).value||null);item.owner_note=s.querySelector('[data-note]').value||null;item.reviewed_at=item.owner_decision?new Date().toISOString():null}});packet.principal_sincere_signed_evidence.verified_real_participation_fact=principalFactBox.value||null;packet.principal_sincere_signed_evidence.allowed_public_summary=principalSummaryBox.value||null;packet.principal_sincere_signed_evidence.owner_confirms_authentic_participation=booleanValue(principalConfirmBox);packet.production_switch.owner_approves_additional_10=booleanValue(approve10Box);packet.production_switch.owner_approves_principal_voice_evidence=booleanValue(approvePrincipalBox);packet.production_switch.owner_approves_production_contract_switch=booleanValue(approveSwitchBox);return packet}}
+function update(message=''){{collect();const done=packet.items.filter(x=>x.owner_decision&&Object.values(x.owner_review_dimensions).every(Boolean)).length;statusBox.textContent=message||`已完成 ${{done}}/10；内容会自动保存在当前浏览器中`;try{{localStorage.setItem(key,JSON.stringify(packet))}}catch(error){{statusBox.textContent+=`；浏览器自动保存不可用，请点击“下载当前进度”`}}}}
+function hydrate(saved){{if(!saved||!Array.isArray(saved.items))return;const savedById=new Map(saved.items.map(item=>[item.owner_item_id,item]));packet.items.forEach((item,i)=>{{const prior=savedById.get(item.owner_item_id);const s=reviewSections[i];if(!prior||!s)return;s.querySelector('[data-decision]').value=prior.owner_decision||'';Object.keys(labels).forEach(k=>s.querySelector(`[data-dim='${{k}}']`).value=(prior.owner_review_dimensions||{{}})[k]||'');s.querySelector('[data-note]').value=prior.owner_note||''}});const evidence=saved.principal_sincere_signed_evidence||{{}};principalFactBox.value=evidence.verified_real_participation_fact||'';principalSummaryBox.value=evidence.allowed_public_summary||'';principalConfirmBox.value=evidence.owner_confirms_authentic_participation===null||evidence.owner_confirms_authentic_participation===undefined?'':String(evidence.owner_confirms_authentic_participation);const decision=saved.production_switch||{{}};approve10Box.value=decision.owner_approves_additional_10===null||decision.owner_approves_additional_10===undefined?'':String(decision.owner_approves_additional_10);approvePrincipalBox.value=decision.owner_approves_principal_voice_evidence===null||decision.owner_approves_principal_voice_evidence===undefined?'':String(decision.owner_approves_principal_voice_evidence);approveSwitchBox.value=decision.owner_approves_production_contract_switch===null||decision.owner_approves_production_contract_switch===undefined?'':String(decision.owner_approves_production_contract_switch)}}
 function download(name,obj){{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(obj,null,2)],{{type:'application/json'}}));a.download=name;a.click();URL.revokeObjectURL(a.href)}}
-adopt.onclick=()=>{{packet.items.forEach((item,i)=>{{const s=document.querySelector(`section[data-i='${{i}}']`);s.querySelector('[data-decision]').value=item.model_recommendation.decision;Object.entries(item.model_recommendation.review_dimensions).forEach(([k,v])=>s.querySelector(`[data-dim='${{k}}']`).value=v)}});update()}};
-save.onclick=()=>download('xhs-production-gate-owner-review-v1.in-progress.json',collect());export.onclick=()=>{{collect();const missing=packet.items.filter(x=>!x.owner_decision||Object.values(x.owner_review_dimensions).some(v=>!v));if(missing.length||principalConfirm.value===''||approve10.value===''||approvePrincipal.value===''||approveSwitch.value===''){{alert('还有审核项或最终决定未完成');return}}packet.owner_review_complete=true;packet.production_ready=packet.production_switch.owner_approves_additional_10&&packet.production_switch.owner_approves_principal_voice_evidence&&packet.production_switch.owner_approves_production_contract_switch;download('{export_path.name}',packet)}};
-render();</script></body></html>"""
+document.querySelectorAll('select,textarea,input').forEach(element=>element.addEventListener('change',()=>update()));document.querySelectorAll('textarea').forEach(element=>element.addEventListener('input',()=>update()));
+document.getElementById('adopt').addEventListener('click',()=>{{packet.items.forEach((item,i)=>{{const s=reviewSections[i];s.querySelector('[data-decision]').value=item.model_recommendation.decision;Object.entries(item.model_recommendation.review_dimensions).forEach(([k,v])=>s.querySelector(`[data-dim='${{k}}']`).value=v)}});update('已填入 10 条模型建议；请重点查看第 33、36 条，并完成页面底部决定。')}});
+document.getElementById('noPrincipal').addEventListener('click',()=>{{principalFactBox.value='';principalSummaryBox.value='';principalConfirmBox.value='false';approvePrincipalBox.value='false';update('已记录：没有可公开的负责人亲身参与事实，不启用负责人实名表达。')}});
+document.getElementById('save').addEventListener('click',()=>{{download('xhs-production-gate-owner-review-v1.in-progress.json',collect());update('当前进度已下载，同时保存在当前浏览器中。')}});
+document.getElementById('export').addEventListener('click',()=>{{collect();const missing=packet.items.filter(x=>!x.owner_decision||Object.values(x.owner_review_dimensions).some(v=>!v));const principalFactMissing=principalConfirmBox.value==='true'&&(!principalFactBox.value.trim()||!principalSummaryBox.value.trim());if(missing.length||principalConfirmBox.value===''||approve10Box.value===''||approvePrincipalBox.value===''||approveSwitchBox.value===''||principalFactMissing){{alert('还有审核项、负责人依据或页面底部决定未完成');return}}packet.owner_review_complete=true;packet.production_ready=packet.production_switch.owner_approves_additional_10&&packet.production_switch.owner_approves_principal_voice_evidence&&packet.production_switch.owner_approves_production_contract_switch;download('{export_path.name}',packet);update('完成结果已导出。')}});
+try{{const saved=localStorage.getItem(key);if(saved)hydrate(JSON.parse(saved))}}catch(error){{statusBox.textContent='页面已显示 10 条内容；旧进度读取失败，请重新选择或导入已下载的进度。'}}
+update();</script></body></html>"""
 
 
 def main() -> int:

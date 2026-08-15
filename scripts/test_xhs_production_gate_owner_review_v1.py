@@ -85,6 +85,16 @@ def test_private_html_is_chinese_self_contained_and_owner_gated(tmp_path):
     assert "全部采用模型建议" in rendered
     assert "负责人真实参与依据" in rendered
     assert "批准切换生产合同" in rendered
+    assert "原帖标题" in rendered
+    assert "帖子正文（审核上下文）" in rendered
+    assert "当前可见评论" in rendered
+    assert "拟发布评论" in rendered
+    assert "这条补充一下。" in rendered
+    assert "官方说明" in rendered
+    assert "data-item-id='生产补充-31'" in rendered
+    assert "document.getElementById('adopt').addEventListener" in rendered
+    assert "已填入 10 条模型建议" in rendered
+    assert "principalFact.value" not in rendered
     assert "publish" not in rendered.lower()
     assert "https://" not in rendered
     assert "http://" not in rendered
