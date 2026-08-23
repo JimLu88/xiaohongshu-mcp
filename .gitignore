@@ -47,3 +47,11 @@ docker/images/
 
 # 本地分析/调试产物，不进仓库
 debug/
+
+# Local Windows toolchain and runtime artifacts
+/.toolchains/
+/bin/
+/logs/
+/login_qrcode.png
+/tachikoma-connection.json
+/research/**/media/

@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"os"
 
 	"github.com/sirupsen/logrus"
 	"github.com/xpzouying/xiaohongshu-mcp/browser"
@@ -18,8 +19,11 @@ func main() {
 		port     string
 	)
 	flag.BoolVar(&headless, "headless", true, "是否无头模式")
-	flag.StringVar(&port, "port", ":18060", "端口")
+	flag.StringVar(&port, "port", configuredPort(), "端口（默认 18060，可由 XHS_MCP_PORT 覆盖）")
 	flag.Parse()
+	if value := os.Getenv(portEnvironmentVariable); value != "" {
+		logrus.Infof("using %s override: %s", portEnvironmentVariable, port)
+	}
 
 	logrus.Infof("xiaohongshu-mcp version: %s", version)
 

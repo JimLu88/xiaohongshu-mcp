@@ -3,8 +3,11 @@ package main
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"runtime/debug"
+	"strings"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/sirupsen/logrus"
@@ -151,8 +154,112 @@ func withPanicRecovery[T any](
 	}
 }
 
+func mcpConnectionError(code, message string) *mcp.CallToolResult {
+	payload := map[string]any{
+		"code": code, "error": message, "service": tachikomaServiceName,
+	}
+	raw, _ := json.Marshal(payload)
+	return &mcp.CallToolResult{
+		IsError:           true,
+		Content:           []mcp.Content{&mcp.TextContent{Text: string(raw)}},
+		StructuredContent: payload,
+	}
+}
+
+func mcpProductionContext(
+	ctx context.Context,
+	req *mcp.CallToolRequest,
+	registry *idempotencyRegistry,
+	maxTimeout time.Duration,
+) (context.Context, context.CancelFunc, *mcp.CallToolResult) {
+	noopCancel := func() {}
+	if !productionExecutionEnabled() {
+		return ctx, noopCancel, mcpConnectionError("PRODUCTION_EXECUTION_DISABLED", "production execution is disabled")
+	}
+	if req == nil || req.Extra == nil {
+		return ctx, noopCancel, mcpConnectionError("TASK_APPROVAL_REQUIRED", "HTTP request approval metadata is required")
+	}
+	headers := req.Extra.Header
+	if headers.Get(expectedServiceHeader) != tachikomaServiceName {
+		return ctx, noopCancel, mcpConnectionError("SERVICE_IDENTITY_MISMATCH", "expected service identity does not match")
+	}
+	if strings.TrimSpace(headers.Get(taskIDHeader)) == "" || strings.TrimSpace(headers.Get(approvalIDHeader)) == "" {
+		return ctx, noopCancel, mcpConnectionError("TASK_APPROVAL_REQUIRED", "fresh task-specific approval is required")
+	}
+	key := strings.TrimSpace(headers.Get(idempotencyKeyHeader))
+	if key == "" {
+		return ctx, noopCancel, mcpConnectionError("IDEMPOTENCY_KEY_REQUIRED", "Idempotency-Key is required")
+	}
+	timeout, err := requestTimeout(headers.Get(timeoutMillisecondsHeader), maxTimeout)
+	if err != nil {
+		return ctx, noopCancel, mcpConnectionError("INVALID_TIMEOUT", err.Error())
+	}
+	if !registry.reserve(key) {
+		return ctx, noopCancel, mcpConnectionError("IDEMPOTENCY_CONFLICT", "idempotency key has already been used")
+	}
+	guarded, cancel := context.WithTimeout(ctx, timeout)
+	return guarded, cancel, nil
+}
+
+func withMCPProductionGuard[T any](
+	registry *idempotencyRegistry,
+	maxTimeout time.Duration,
+	handler func(context.Context, *mcp.CallToolRequest, T) (*mcp.CallToolResult, any, error),
+) func(context.Context, *mcp.CallToolRequest, T) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, args T) (*mcp.CallToolResult, any, error) {
+		guarded, cancel, rejected := mcpProductionContext(ctx, req, registry, maxTimeout)
+		defer cancel()
+		if rejected != nil {
+			return rejected, nil, nil
+		}
+		return handler(guarded, req, args)
+	}
+}
+
+func mcpProductionReadContext(
+	ctx context.Context,
+	req *mcp.CallToolRequest,
+	maxTimeout time.Duration,
+) (context.Context, context.CancelFunc, *mcp.CallToolResult) {
+	noopCancel := func() {}
+	if !productionReadEnabled() {
+		return ctx, noopCancel, mcpConnectionError("PRODUCTION_READ_DISABLED", "production platform reading is disabled")
+	}
+	if req == nil || req.Extra == nil {
+		return ctx, noopCancel, mcpConnectionError("TASK_APPROVAL_REQUIRED", "HTTP request approval metadata is required")
+	}
+	headers := req.Extra.Header
+	if headers.Get(expectedServiceHeader) != tachikomaServiceName {
+		return ctx, noopCancel, mcpConnectionError("SERVICE_IDENTITY_MISMATCH", "expected service identity does not match")
+	}
+	if strings.TrimSpace(headers.Get(taskIDHeader)) == "" || strings.TrimSpace(headers.Get(approvalIDHeader)) == "" {
+		return ctx, noopCancel, mcpConnectionError("TASK_APPROVAL_REQUIRED", "fresh task-specific collection approval is required")
+	}
+	timeout, err := requestTimeout(headers.Get(timeoutMillisecondsHeader), maxTimeout)
+	if err != nil {
+		return ctx, noopCancel, mcpConnectionError("INVALID_TIMEOUT", err.Error())
+	}
+	guarded, cancel := context.WithTimeout(ctx, timeout)
+	return guarded, cancel, nil
+}
+
+func withMCPProductionReadGuard[T any](
+	maxTimeout time.Duration,
+	handler func(context.Context, *mcp.CallToolRequest, T) (*mcp.CallToolResult, any, error),
+) func(context.Context, *mcp.CallToolRequest, T) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, args T) (*mcp.CallToolResult, any, error) {
+		guarded, cancel, rejected := mcpProductionReadContext(ctx, req, maxTimeout)
+		defer cancel()
+		if rejected != nil {
+			return rejected, nil, nil
+		}
+		return handler(guarded, req, args)
+	}
+}
+
 // registerTools 注册所有 MCP 工具
 func registerTools(server *mcp.Server, appServer *AppServer) {
+	productionRegistry := appServer.tachikomaRegistry
 	// 工具 1: 检查登录状态
 	mcp.AddTool(server,
 		&mcp.Tool{
@@ -195,10 +302,10 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 				DestructiveHint: boolPtr(true),
 			},
 		},
-		withPanicRecovery("delete_cookies", func(ctx context.Context, req *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
+		withPanicRecovery("delete_cookies", withMCPProductionGuard(productionRegistry, defaultActionTimeout, func(ctx context.Context, req *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
 			result := appServer.handleDeleteCookies(ctx)
 			return convertToMCPResult(result), nil, nil
-		}),
+		})),
 	)
 
 	// 工具 4: 发布内容
@@ -211,7 +318,7 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 				DestructiveHint: boolPtr(true),
 			},
 		},
-		withPanicRecovery("publish_content", func(ctx context.Context, req *mcp.CallToolRequest, args PublishContentArgs) (*mcp.CallToolResult, any, error) {
+		withPanicRecovery("publish_content", withMCPProductionGuard(productionRegistry, defaultActionTimeout, func(ctx context.Context, req *mcp.CallToolRequest, args PublishContentArgs) (*mcp.CallToolResult, any, error) {
 			// 转换参数格式到现有的 handler
 			argsMap := map[string]interface{}{
 				"title":       args.Title,
@@ -225,7 +332,7 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 			}
 			result := appServer.handlePublishContent(ctx, argsMap)
 			return convertToMCPResult(result), nil, nil
-		}),
+		})),
 	)
 
 	// 工具 5: 获取Feed列表
@@ -238,10 +345,10 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 				ReadOnlyHint: true,
 			},
 		},
-		withPanicRecovery("list_feeds", func(ctx context.Context, req *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
+		withPanicRecovery("list_feeds", withMCPProductionReadGuard(defaultActionTimeout, func(ctx context.Context, req *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
 			result := appServer.handleListFeeds(ctx)
 			return convertToMCPResult(result), nil, nil
-		}),
+		})),
 	)
 
 	// 工具 6: 搜索内容
@@ -254,10 +361,10 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 				ReadOnlyHint: true,
 			},
 		},
-		withPanicRecovery("search_feeds", func(ctx context.Context, req *mcp.CallToolRequest, args SearchFeedsArgs) (*mcp.CallToolResult, any, error) {
+		withPanicRecovery("search_feeds", withMCPProductionReadGuard(defaultActionTimeout, func(ctx context.Context, req *mcp.CallToolRequest, args SearchFeedsArgs) (*mcp.CallToolResult, any, error) {
 			result := appServer.handleSearchFeeds(ctx, args)
 			return convertToMCPResult(result), nil, nil
-		}),
+		})),
 	)
 
 	// 工具 7: 获取Feed详情
@@ -270,7 +377,7 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 				ReadOnlyHint: true,
 			},
 		},
-		withPanicRecovery("get_feed_detail", func(ctx context.Context, req *mcp.CallToolRequest, args FeedDetailArgs) (*mcp.CallToolResult, any, error) {
+		withPanicRecovery("get_feed_detail", withMCPProductionReadGuard(defaultActionTimeout, func(ctx context.Context, req *mcp.CallToolRequest, args FeedDetailArgs) (*mcp.CallToolResult, any, error) {
 			argsMap := map[string]interface{}{
 				"feed_id":           args.FeedID,
 				"xsec_token":        args.XsecToken,
@@ -302,7 +409,7 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 
 			result := appServer.handleGetFeedDetail(ctx, argsMap)
 			return convertToMCPResult(result), nil, nil
-		}),
+		})),
 	)
 
 	// 工具 8: 获取用户主页
@@ -315,14 +422,14 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 				ReadOnlyHint: true,
 			},
 		},
-		withPanicRecovery("user_profile", func(ctx context.Context, req *mcp.CallToolRequest, args UserProfileArgs) (*mcp.CallToolResult, any, error) {
+		withPanicRecovery("user_profile", withMCPProductionReadGuard(defaultActionTimeout, func(ctx context.Context, req *mcp.CallToolRequest, args UserProfileArgs) (*mcp.CallToolResult, any, error) {
 			argsMap := map[string]interface{}{
 				"user_id":    args.UserID,
 				"xsec_token": args.XsecToken,
 			}
 			result := appServer.handleUserProfile(ctx, argsMap)
 			return convertToMCPResult(result), nil, nil
-		}),
+		})),
 	)
 
 	// 工具 9: 发表评论
@@ -335,7 +442,7 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 				DestructiveHint: boolPtr(true),
 			},
 		},
-		withPanicRecovery("post_comment_to_feed", func(ctx context.Context, req *mcp.CallToolRequest, args PostCommentArgs) (*mcp.CallToolResult, any, error) {
+		withPanicRecovery("post_comment_to_feed", withMCPProductionGuard(productionRegistry, defaultActionTimeout, func(ctx context.Context, req *mcp.CallToolRequest, args PostCommentArgs) (*mcp.CallToolResult, any, error) {
 			argsMap := map[string]interface{}{
 				"feed_id":    args.FeedID,
 				"xsec_token": args.XsecToken,
@@ -343,7 +450,7 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 			}
 			result := appServer.handlePostComment(ctx, argsMap)
 			return convertToMCPResult(result), nil, nil
-		}),
+		})),
 	)
 
 	// 工具 10: 回复评论
@@ -356,7 +463,7 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 				DestructiveHint: boolPtr(true),
 			},
 		},
-		withPanicRecovery("reply_comment_in_feed", func(ctx context.Context, req *mcp.CallToolRequest, args ReplyCommentArgs) (*mcp.CallToolResult, any, error) {
+		withPanicRecovery("reply_comment_in_feed", withMCPProductionGuard(productionRegistry, defaultActionTimeout, func(ctx context.Context, req *mcp.CallToolRequest, args ReplyCommentArgs) (*mcp.CallToolResult, any, error) {
 			if args.CommentID == "" && args.UserID == "" {
 				return &mcp.CallToolResult{
 					IsError: true,
@@ -373,7 +480,7 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 			}
 			result := appServer.handleReplyComment(ctx, argsMap)
 			return convertToMCPResult(result), nil, nil
-		}),
+		})),
 	)
 
 	// 工具 11: 发布视频（仅本地文件）
@@ -386,7 +493,7 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 				DestructiveHint: boolPtr(true),
 			},
 		},
-		withPanicRecovery("publish_with_video", func(ctx context.Context, req *mcp.CallToolRequest, args PublishVideoArgs) (*mcp.CallToolResult, any, error) {
+		withPanicRecovery("publish_with_video", withMCPProductionGuard(productionRegistry, defaultActionTimeout, func(ctx context.Context, req *mcp.CallToolRequest, args PublishVideoArgs) (*mcp.CallToolResult, any, error) {
 			argsMap := map[string]interface{}{
 				"title":       args.Title,
 				"content":     args.Content,
@@ -398,7 +505,7 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 			}
 			result := appServer.handlePublishVideo(ctx, argsMap)
 			return convertToMCPResult(result), nil, nil
-		}),
+		})),
 	)
 
 	// 工具 12: 点赞笔记
@@ -411,7 +518,7 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 				DestructiveHint: boolPtr(true),
 			},
 		},
-		withPanicRecovery("like_feed", func(ctx context.Context, req *mcp.CallToolRequest, args LikeFeedArgs) (*mcp.CallToolResult, any, error) {
+		withPanicRecovery("like_feed", withMCPProductionGuard(productionRegistry, defaultActionTimeout, func(ctx context.Context, req *mcp.CallToolRequest, args LikeFeedArgs) (*mcp.CallToolResult, any, error) {
 			argsMap := map[string]interface{}{
 				"feed_id":    args.FeedID,
 				"xsec_token": args.XsecToken,
@@ -419,7 +526,7 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 			}
 			result := appServer.handleLikeFeed(ctx, argsMap)
 			return convertToMCPResult(result), nil, nil
-		}),
+		})),
 	)
 
 	// 工具 13: 收藏笔记
@@ -432,7 +539,7 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 				DestructiveHint: boolPtr(true),
 			},
 		},
-		withPanicRecovery("favorite_feed", func(ctx context.Context, req *mcp.CallToolRequest, args FavoriteFeedArgs) (*mcp.CallToolResult, any, error) {
+		withPanicRecovery("favorite_feed", withMCPProductionGuard(productionRegistry, defaultActionTimeout, func(ctx context.Context, req *mcp.CallToolRequest, args FavoriteFeedArgs) (*mcp.CallToolResult, any, error) {
 			argsMap := map[string]interface{}{
 				"feed_id":    args.FeedID,
 				"xsec_token": args.XsecToken,
@@ -440,7 +547,7 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 			}
 			result := appServer.handleFavoriteFeed(ctx, argsMap)
 			return convertToMCPResult(result), nil, nil
-		}),
+		})),
 	)
 
 	// 工具 14: 获取我的主页
@@ -453,10 +560,10 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 				ReadOnlyHint: true,
 			},
 		},
-		withPanicRecovery("get_my_profile", func(ctx context.Context, req *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
+		withPanicRecovery("get_my_profile", withMCPProductionReadGuard(defaultActionTimeout, func(ctx context.Context, req *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
 			result := appServer.handleGetMyProfile(ctx)
 			return convertToMCPResult(result), nil, nil
-		}),
+		})),
 	)
 
 	logrus.Infof("Registered %d MCP tools", 14)

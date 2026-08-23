@@ -19,12 +19,14 @@ type AppServer struct {
 	mcpServer          *mcp.Server
 	router             *gin.Engine
 	httpServer         *http.Server
+	tachikomaRegistry  *idempotencyRegistry
 }
 
 // NewAppServer 创建新的应用服务器实例
 func NewAppServer(xiaohongshuService *XiaohongshuService) *AppServer {
 	appServer := &AppServer{
 		xiaohongshuService: xiaohongshuService,
+		tachikomaRegistry:  newIdempotencyRegistry(),
 	}
 
 	// 初始化 MCP Server（需要在创建 appServer 之后，因为工具注册需要访问 appServer）

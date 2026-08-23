@@ -105,9 +105,20 @@ func (s *SearchAction) Search(ctx context.Context, keyword string, filters ...Fi
 	page := s.page.Context(ctx).Timeout(60 * time.Second)
 
 	searchURL := makeSearchURL(keyword)
-	page.MustNavigate(searchURL)
-	page.MustWaitStable()
-	page.MustWait(`() => window.__INITIAL_STATE__ !== undefined`)
+	if err := page.Navigate(searchURL); err != nil {
+		return nil, fmt.Errorf("打开搜索页失败: %w", err)
+	}
+	// 搜索页会持续上报和刷新推荐模块，等待整页完全稳定会在正常页面上误超时。
+	// 这里只等待本次读取真正依赖的搜索数据就绪。
+	if err := page.Wait(rod.Eval(`() => {
+		const feeds = window.__INITIAL_STATE__?.search?.feeds;
+		const value = feeds ? (feeds.value !== undefined ? feeds.value : feeds._value) : null;
+		if (Array.isArray(value) && value.length > 0) return true;
+		const text = document.body?.innerText || "";
+		return /暂无相关|没有找到|无搜索结果/.test(text);
+	}`)); err != nil {
+		return nil, fmt.Errorf("等待搜索数据失败: %w", err)
+	}
 
 	if len(pending) > 0 {
 		// 悬停在筛选按钮上展开面板
@@ -139,7 +150,7 @@ func (s *SearchAction) Search(ctx context.Context, keyword string, filters ...Fi
 		waitFeedsChanged(page, before, 15*time.Second)
 	}
 
-	result := page.MustEval(`() => {
+	evaluated, err := page.Eval(`() => {
 		if (window.__INITIAL_STATE__ &&
 		    window.__INITIAL_STATE__.search &&
 		    window.__INITIAL_STATE__.search.feeds) {
@@ -150,7 +161,11 @@ func (s *SearchAction) Search(ctx context.Context, keyword string, filters ...Fi
 			}
 		}
 		return "";
-	}`).String()
+	}`)
+	if err != nil {
+		return nil, fmt.Errorf("读取搜索数据失败: %w", err)
+	}
+	result := evaluated.Value.String()
 
 	if result == "" {
 		return nil, errors.ErrNoFeeds

@@ -4,7 +4,7 @@ name: Test
 # 有头浏览器集成测试用 //go:build integration 隔离：默认不运行，仅编译校验。
 on:
   push:
-    branches: [main]
+    branches: [main, "feature/**"]
   pull_request:
 
 jobs:

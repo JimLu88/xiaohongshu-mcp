@@ -20,8 +20,14 @@ func setupRoutes(appServer *AppServer) *gin.Engine {
 	router.Use(errorHandlingMiddleware())
 	router.Use(corsMiddleware())
 
+	// 本地人工登录页。页面只在内存中展示二维码，不持久化认证材料。
+	router.GET("/", appServer.loginPageHandler)
+	router.GET("/login", appServer.loginPageHandler)
+
 	// 健康检查
 	router.GET("/health", healthHandler)
+	router.GET("/healthz", tachikomaHealthzHandler)
+	router.GET("/tachikoma/v1/contract", tachikomaContractHandler)
 
 	// MCP 端点 - 使用官方 SDK 的 Streamable HTTP Handler
 	mcpHandler := mcp.NewStreamableHTTPHandler(
@@ -44,19 +50,21 @@ func setupRoutes(appServer *AppServer) *gin.Engine {
 	{
 		api.GET("/login/status", appServer.checkLoginStatusHandler)
 		api.GET("/login/qrcode", appServer.getLoginQrcodeHandler)
-		api.DELETE("/login/cookies", appServer.deleteCookiesHandler)
-		api.POST("/publish", appServer.publishHandler)
-		api.POST("/publish_video", appServer.publishVideoHandler)
-		api.GET("/feeds/list", appServer.listFeedsHandler)
-		api.GET("/feeds/search", appServer.searchFeedsHandler)
-		api.POST("/feeds/search", appServer.searchFeedsHandler)
-		api.POST("/feeds/detail", appServer.getFeedDetailHandler)
-		api.POST("/user/profile", appServer.userProfileHandler)
-		api.POST("/feeds/comment", appServer.postCommentHandler)
-		api.POST("/feeds/comment/reply", appServer.replyCommentHandler)
-		api.POST("/feeds/like", appServer.likeFeedHandler)
-		api.POST("/feeds/favorite", appServer.favoriteFeedHandler)
-		api.GET("/user/me", appServer.myProfileHandler)
+		productionGuard := tachikomaProductionGuard(appServer.tachikomaRegistry, defaultActionTimeout)
+		productionReadGuard := tachikomaProductionReadGuard(defaultActionTimeout)
+		api.DELETE("/login/cookies", productionGuard, appServer.deleteCookiesHandler)
+		api.POST("/publish", productionGuard, appServer.publishHandler)
+		api.POST("/publish_video", productionGuard, appServer.publishVideoHandler)
+		api.GET("/feeds/list", productionReadGuard, appServer.listFeedsHandler)
+		api.GET("/feeds/search", productionReadGuard, appServer.searchFeedsHandler)
+		api.POST("/feeds/search", productionReadGuard, appServer.searchFeedsHandler)
+		api.POST("/feeds/detail", productionReadGuard, appServer.getFeedDetailHandler)
+		api.POST("/user/profile", productionReadGuard, appServer.userProfileHandler)
+		api.POST("/feeds/comment", productionGuard, appServer.postCommentHandler)
+		api.POST("/feeds/comment/reply", productionGuard, appServer.replyCommentHandler)
+		api.POST("/feeds/like", productionGuard, appServer.likeFeedHandler)
+		api.POST("/feeds/favorite", productionGuard, appServer.favoriteFeedHandler)
+		api.GET("/user/me", productionReadGuard, appServer.myProfileHandler)
 	}
 
 	return router
