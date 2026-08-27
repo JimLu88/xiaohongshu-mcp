@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>Carousel adapter fixture</title>
+    <style>
+      .swiper-slide { display: none; }
+      .swiper-slide-active { display: block; }
+    </style>
+  </head>
+  <body>
+    <main class="swiper" aria-label="local carousel test fixture">
+      <section class="swiper-slide swiper-slide-active" data-swiper-slide-index="0">
+        <img alt="fixture 1" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" />
+      </section>
+      <section class="swiper-slide" data-swiper-slide-index="1">
+        <img alt="fixture 2" src="data:image/gif;base64,R0lGODlhAQABAIAAAAEBAf///ywAAAAAAQABAAACAUwAOw==" />
+      </section>
+      <section class="swiper-slide" data-swiper-slide-index="2">
+        <img alt="fixture 3" src="data:image/gif;base64,R0lGODlhAQABAIAAAAICAv///ywAAAAAAQABAAACAUwAOw==" />
+      </section>
+      <button class="arrow-controller right" type="button" aria-label="下一张">下一张</button>
+    </main>
+    <script>
+      const slides = Array.from(document.querySelectorAll(".swiper-slide"));
+      let activeIndex = 0;
+      function advance() {
+        slides[activeIndex].classList.remove("swiper-slide-active");
+        activeIndex = (activeIndex + 1) % slides.length;
+        slides[activeIndex].classList.add("swiper-slide-active");
+      }
+      document.querySelector(".arrow-controller.right").addEventListener("click", advance);
+      document.body.addEventListener("keydown", (event) => {
+        if (event.key === "ArrowRight") advance();
+      });
+    </script>
+  </body>
+</html>

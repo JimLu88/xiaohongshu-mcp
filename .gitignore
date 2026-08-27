@@ -48,6 +48,54 @@ docker/images/
 # 本地分析/调试产物，不进仓库
 debug/
 
+# Panse research corpus, daily platform evidence, materials and publish receipts.
+# The few historical manifests already tracked by Git remain tracked; this rule
+# prevents new local research/runtime data from entering a program commit.
+/research/
+
+# Local test/runtime caches and downloaded dependencies
+/.tmp/
+/.pytest_cache/
+**/__pycache__/
+*.py[cod]
+/vendor_local/
+
+# Runtime logs and transient event streams
+*.log
+*.ndjson
+
+# Local databases and SQLite sidecars
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.wal
+*.shm
+
+# Sessions, local materials and business receipts
+/session/
+/sessions/
+**/sessions/
+/materials/
+/media/
+/receipts/
+/publish-receipts/
+/publish_receipts/
+**/*publish*receipt*.json
+
+# Credentials, cookies and login QR artifacts
+.env.*
+!.env.example
+/credentials/
+/secrets/
+**/*credential*.json
+**/*secret*.json
+**/*cookie*.json
+**/*qrcode*.png
+**/*qr-code*.png
+
 # Local Windows toolchain and runtime artifacts
 /.toolchains/
 /bin/
