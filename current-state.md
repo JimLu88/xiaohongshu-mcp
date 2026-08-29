@@ -1929,3 +1929,53 @@ slot 2 的侧栏“我”现场 profile id 为 `634c02a1000000001901c0e6`，与�
   `daily_runs/2026-08-29/account_1_offplatform_research_brief_20260829.md`。
 - 该资料卡只用于之后筛选和提问，不能替代小红书标题、正文、评论与媒体核验；今日平台浏览、深读、评论
   草稿和公开动作计数仍全部为 0。
+
+### 52.4 用户手动 IAB 正常，01→02 消息通道暂时断开
+
+- 用户在同一内置浏览器中手动打开了真实笔记详情，正文、1/18 媒体和评论区均正常可见，未见登录或平台
+  风险提示。这进一步证明页面、账号会话和手动 IAB 本身可用；故障只发生在自动控制读取页面时需要的
+  origin 授权/elicitation 通道。
+- 新模型下 01 已成功发现并接管唯一可见小红书标签；但可见 DOM 与截图读取都在 payload 返回前给出同一
+  授权通道错误。模型切换没有改变故障，深读和评论计数仍为 0。
+- 用户已明确要求转交 `02｜小红书审核与程序维护`。01 两次调用固定 02 任务消息接口均返回
+  `Transport closed`，因此不得声称已送达。有限转交单已落盘：
+  `daily_runs/2026-08-29/account_1_to_02_origin_elicitation_transport_handoff_20260829.json`；待任务消息通道
+  恢复后只补送这一份，不重复创建事故或扩展平台动作。
+
+## 53. Browser helper 名称碰撞已修复，但 01 复测前控制通道仍关闭
+
+- 02 已纠正 Browser `26.825.32147` 中导航补丁错误复用旧版本 helper 名称的问题。修复回执哈希与用户
+  提供值一致，安装后服务 SHA-256 为 `86981b89ef13e2d696d39ef4cf5718a9cd3e348c960d39d35ff95c2641192baa`；
+  项目回归 68 passed, 0 failed。该技术验证不是平台成功。
+- 01 当前前台回合已核对存在 18:36:39 启动、晚于 18:33:44 修复时间的新 worker。随后准备按回执只接管
+  用户手动打开的 `697b01cb000000002200b796` 并读取一次可见 DOM；但 Browser 调用在执行任何脚本前即
+  返回 `Transport closed`。一次纯控制探针也同样关闭，因此没有接管、DOM、截图、导航或平台动作，
+  回执规定的唯一真实页面复测尚未消耗。
+- 有限停止证据：
+  `daily_runs/2026-08-29/browser_origin_helper_collision_retest_transport_blocked_20260829.json`。下一步只恢复
+  当前 01 的 node_repl MCP 控制通道；纯控制探针成功后，再执行原修复回执规定的唯一页面复测，不得先重放。
+
+## 53. affected-origin 假授权错误根因已修复，等待新 Browser worker 单次验收
+
+- 02 按交接 SHA-256 复核后发现，`[object Promise] undefined is required...` 并不是
+  `createElicitation` 缄默缺失的直接证据，而是 8 月 29 日升级适配脚本把 Browser 26.820 的
+  截止辅助函数名 `s1`、`ds` 错套到 26.825.32147。新版 `s1` 已是 raw CDP 受影响网址必填校验，
+  首次标签附着因此把 Promise 当成命令名，产生了误导性的 affected-origin 报错；这与用户手动 IAB
+  页面、登录、账号和网络状态无关。
+- `scripts/repair_codex_browser_navigation_deadline.ps1` 已按实际服务形态映射新版 `hk`/`hs`，保留旧版
+  `s1`/`ds`，并能自动修复已安装的碰撞状态。当前服务 SHA-256 已从
+  `fc045f69ddb5c4c2b1118172ff9ddd6cb528a6dd22a37f7c923e379b56013cc1` 更新为
+  `86981b89ef13e2d696d39ef4cf5718a9cd3e348c960d39d35ff95c2641192baa`；原文件已按哈希备份。
+- 新版原始安装、新版碰撞修复、旧版已修安装共 3 个离线场景均通过 Apply/Verify 与 `node --check`；
+  安装态两个补丁核验和语法检查通过，搜索/详情/轮播回归 **68 passed, 0 failed**。这些只证明技术
+  修复，不是平台或页面验收成功。
+- 当前 02 的旧 Browser worker 已停止，但同一任务的 MCP transport 没有自动重建，控制探针在执行前
+  返回 `Transport closed`；没有创建 binding/标签，没有导航、DOM、截图、登录、切号、搜索、评论、
+  回复、关注、发布或发送。结构化修复回执：
+  `daily_runs/2026-08-29/browser_origin_helper_collision_program_repair_receipt_20260829.json`。
+- 唯一复测条件：01 在新的前台 turn 使用修复后新建的 Browser worker，核对上述服务哈希，只接管用户
+  已明确展示的唯一小红书标签，执行 1 次可见 DOM 只读请求，不导航、不追加截图。若出现标准
+  `access_browser_origin` 授权提示，由用户正常批准；原字面错误 `[object Promise] undefined` 不得再出现。
+  若仍出现，说明 worker 仍旧，立即停止且不把它归因于平台、登录或网络。
+- 02 向原 01 发送有限回流结果时，任务消息接口返回 `Transport closed`，因此本轮未声称已送达，也没有
+  重试或自动启动业务。用户下一次打开或在 01 发消息时，01 直接读取本节与上述回执后执行唯一复测。

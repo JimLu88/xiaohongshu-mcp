@@ -44,6 +44,17 @@ if (-not (Test-Path -LiteralPath $ServicePath -PathType Leaf)) {
 }
 
 $source = [IO.File]::ReadAllText($ServicePath)
+$legacyDeadlineHelpers =
+    $source.Contains('function ds(t){return t.beforeDispatch?.(),EV(t)}', [StringComparison]::Ordinal) -and
+    $source.Contains('async function s1(t,e){if(e.deadlineMs==null)return await t;', [StringComparison]::Ordinal)
+$currentDeadlineHelpers =
+    $source.Contains('function hs(e){return e.beforeDispatch?.(),KV(e)}', [StringComparison]::Ordinal) -and
+    $source.Contains('async function hk(e,t){if(t.deadlineMs==null)return await e;', [StringComparison]::Ordinal)
+if ($legacyDeadlineHelpers -eq $currentDeadlineHelpers) {
+    throw 'Could not identify exactly one supported Browser deadline-helper shape.'
+}
+$attachDeadlineHelper = if ($currentDeadlineHelpers) { 'hk' } else { 's1' }
+$timeoutHelper = if ($currentDeadlineHelpers) { 'hs' } else { 'ds' }
 $patchedMarker = 'await this.ensureAttachedTab(r.tabId,i)'
 $isPatched = $source.Contains($patchedMarker, [StringComparison]::Ordinal)
 
@@ -56,7 +67,8 @@ if ($Mode -eq 'Verify') {
         'await this.ensureAttachedTab(r.tabId,i)',
         'async ensureAttachedTab(r,n={})',
         'async enableFocusEmulation(r,n={})',
-        'timeoutMs:ds(n),preserveDebuggerOnTimeout:!0',
+        ("await {0}(this.api.attach(r),n)" -f $attachDeadlineHelper),
+        ("timeoutMs:{0}(n),preserveDebuggerOnTimeout:!0" -f $timeoutHelper),
         'async readDocumentState(r,n={})',
         'deadlineMs:o,timeoutMs:n,preserveDebuggerOnTimeout:!0'
     )
@@ -83,8 +95,65 @@ if ($Mode -eq 'Verify') {
 }
 
 if ($isPatched) {
+    if ($currentDeadlineHelpers -and
+        ($source.Contains('await s1(this.api.attach(r),n)', [StringComparison]::Ordinal) -or
+         $source.Contains('timeoutMs:ds(n),preserveDebuggerOnTimeout:!0', [StringComparison]::Ordinal))) {
+        $corrected = $source
+        if ($corrected.Contains('await s1(this.api.attach(r),n)', [StringComparison]::Ordinal)) {
+            $corrected = Replace-ExactlyOnce -Text $corrected `
+                -Before 'await s1(this.api.attach(r),n)' `
+                -After 'await hk(this.api.attach(r),n)' `
+                -Label 'current attach deadline helper collision'
+        }
+        if ($corrected.Contains('timeoutMs:ds(n),preserveDebuggerOnTimeout:!0', [StringComparison]::Ordinal)) {
+            $corrected = Replace-ExactlyOnce -Text $corrected `
+                -Before 'timeoutMs:ds(n),preserveDebuggerOnTimeout:!0' `
+                -After 'timeoutMs:hs(n),preserveDebuggerOnTimeout:!0' `
+                -Label 'current timeout helper collision'
+        }
+
+        $sourceSha = Get-Sha256 $ServicePath
+        New-Item -ItemType Directory -Path $BackupRoot -Force | Out-Null
+        $browserVersion = Split-Path -Leaf (Split-Path -Parent (Split-Path -Parent $ServicePath))
+        $backupPath = Join-Path $BackupRoot "browser-service.$browserVersion.$sourceSha.mjs"
+        if (-not (Test-Path -LiteralPath $backupPath)) {
+            Copy-Item -LiteralPath $ServicePath -Destination $backupPath
+        }
+        if ((Get-Sha256 $backupPath) -ne $sourceSha) {
+            throw "Backup verification failed: $backupPath"
+        }
+
+        $utf8NoBom = [Text.UTF8Encoding]::new($false)
+        [IO.File]::WriteAllText($ServicePath, $corrected, $utf8NoBom)
+        try {
+            & $PSCommandPath -Mode Verify -ServicePath $ServicePath -BackupRoot $BackupRoot
+            if ($LASTEXITCODE -ne 0) {
+                throw "Post-write verification exited with $LASTEXITCODE"
+            }
+        }
+        catch {
+            Copy-Item -LiteralPath $backupPath -Destination $ServicePath -Force
+            throw "Deadline helper correction failed and the previous service was restored. $($_.Exception.Message)"
+        }
+
+        [pscustomobject]@{
+            status = 'repaired_helper_collision'
+            service_path = $ServicePath
+            original_sha256 = $sourceSha
+            patched_sha256 = Get-Sha256 $ServicePath
+            backup_path = $backupPath
+        } | ConvertTo-Json -Depth 3
+        exit 0
+    }
     & $PSCommandPath -Mode Verify -ServicePath $ServicePath -BackupRoot $BackupRoot
     exit $LASTEXITCODE
+}
+
+$attachPipelineAfter = if ($currentDeadlineHelpers) {
+    'async runTabAttachHandlers(r,n={}){await Promise.allSettled([...this.tabAttachHandlers].map(async o=>o(r,n)))}async runTabCleanupHandlers(r){await Promise.allSettled([...this.tabCleanupHandlers].map(async n=>n(r)))}deleteFileChoosersForTab(r){for(let[n,o]of this.fileChoosersById)o.tabId===r&&this.fileChoosersById.delete(n)}async ensureAttachedTab(r,n={}){if(this.attachedTabIds.has(r))return;at(n),await hk(this.api.attach(r),n),at(n),await this.enableFocusEmulation(r,n),at(n),this.attachedTabIds.add(r),this.emit("tabAttached",r),await this.runTabAttachHandlers(r,n),at(n)}async enableFocusEmulation(r,n={}){try{await this.api.executeCdp({target:{tabId:r},method:"Emulation.setFocusEmulationEnabled",commandParams:{enabled:!0},timeoutMs:hs(n),preserveDebuggerOnTimeout:!0})}catch{}}'
+}
+else {
+    'async runTabAttachHandlers(r,n={}){await Promise.allSettled([...this.tabAttachHandlers].map(async o=>o(r,n)))}async runTabCleanupHandlers(r){await Promise.allSettled([...this.tabCleanupHandlers].map(async n=>n(r)))}deleteFileChoosersForTab(r){for(let[n,o]of this.fileChoosersById)o.tabId===r&&this.fileChoosersById.delete(n)}async ensureAttachedTab(r,n={}){if(this.attachedTabIds.has(r))return;at(n),await s1(this.api.attach(r),n),at(n),await this.enableFocusEmulation(r,n),at(n),this.attachedTabIds.add(r),this.emit("tabAttached",r),await this.runTabAttachHandlers(r,n),at(n)}async enableFocusEmulation(r,n={}){try{await this.api.executeCdp({target:{tabId:r},method:"Emulation.setFocusEmulationEnabled",commandParams:{enabled:!0},timeoutMs:ds(n),preserveDebuggerOnTimeout:!0})}catch{}}'
 }
 
 $replacements = @(
@@ -116,7 +185,7 @@ $replacements = @(
     @(
         'attach_pipeline_deadline',
         'async runTabAttachHandlers(r){await Promise.allSettled([...this.tabAttachHandlers].map(async n=>n(r)))}async runTabCleanupHandlers(r){await Promise.allSettled([...this.tabCleanupHandlers].map(async n=>n(r)))}deleteFileChoosersForTab(r){for(let[n,o]of this.fileChoosersById)o.tabId===r&&this.fileChoosersById.delete(n)}async ensureAttachedTab(r){this.attachedTabIds.has(r)||(await this.api.attach(r),await this.enableFocusEmulation(r),this.attachedTabIds.add(r),this.emit("tabAttached",r),await this.runTabAttachHandlers(r))}async enableFocusEmulation(r){try{await this.api.executeCdp({target:{tabId:r},method:"Emulation.setFocusEmulationEnabled",commandParams:{enabled:!0}})}catch{}}',
-        'async runTabAttachHandlers(r,n={}){await Promise.allSettled([...this.tabAttachHandlers].map(async o=>o(r,n)))}async runTabCleanupHandlers(r){await Promise.allSettled([...this.tabCleanupHandlers].map(async n=>n(r)))}deleteFileChoosersForTab(r){for(let[n,o]of this.fileChoosersById)o.tabId===r&&this.fileChoosersById.delete(n)}async ensureAttachedTab(r,n={}){if(this.attachedTabIds.has(r))return;at(n),await s1(this.api.attach(r),n),at(n),await this.enableFocusEmulation(r,n),at(n),this.attachedTabIds.add(r),this.emit("tabAttached",r),await this.runTabAttachHandlers(r,n),at(n)}async enableFocusEmulation(r,n={}){try{await this.api.executeCdp({target:{tabId:r},method:"Emulation.setFocusEmulationEnabled",commandParams:{enabled:!0},timeoutMs:ds(n),preserveDebuggerOnTimeout:!0})}catch{}}'
+        $attachPipelineAfter
     )
 )
 
