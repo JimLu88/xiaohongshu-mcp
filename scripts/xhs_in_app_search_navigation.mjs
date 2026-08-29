@@ -4,11 +4,12 @@
  * the Codex in-app browser.
  *
  * A browser binding can remain valid after its task tabs are cleaned up. This
- * module therefore treats an empty task-tab list as recoverable, first claims
- * at most one matching visible in-app-browser tab when one was released by a
- * control reset, otherwise creates at most one task tab, loads only the
- * Xiaohongshu homepage, and submits a query only after the caller has
- * independently verified account identity and risk state.
+ * module therefore treats an empty task-tab list as recoverable. Workspace
+ * bootstrap is deliberately split into one documented Browser RPC per public
+ * stage so a control reset cannot hide whether a visible-tab inspection, tab
+ * claim, tab creation, or homepage navigation was attempted. A query is still
+ * submitted only after the caller has independently verified account identity
+ * and risk state.
  */
 
 const XHS_ORIGIN = "https://www.xiaohongshu.com";
@@ -17,11 +18,24 @@ const SEARCH_INPUT_SELECTOR =
   "textarea.textarea, input[placeholder*='搜索'], textarea[placeholder*='搜索']";
 
 export const XHS_SEARCH_NAVIGATION_CONTRACT = Object.freeze({
-  contract_id: "panse-xhs-iab-search-navigation.v10",
+  contract_id: "panse-xhs-iab-search-navigation.v13",
   browser_family: "iab",
-  maximum_new_tabs_per_acquire_call: 1,
+  maximum_control_rpcs_per_workspace_stage: 1,
+  empty_workspace_staged_bootstrap: true,
+  maximum_new_tabs_per_acquire_call: 0,
+  maximum_user_tab_claims_per_acquire_call: 0,
+  maximum_homepage_navigations_per_acquire_call: 0,
+  maximum_new_tabs_per_bootstrap_create_stage: 1,
+  maximum_homepage_navigations_per_bootstrap_navigation_stage: 1,
+  bootstrap_creation_requires_visible_absence_proof: true,
+  indeterminate_navigation_zero_action_recovery: true,
+  maximum_post_indeterminate_navigation_recovery_rpcs: 1,
+  navigation_replay_after_indeterminate_result_allowed: false,
+  released_workspace_recovery_after_task_candidate_loss: true,
+  maximum_released_workspace_list_rpcs: 1,
+  maximum_released_workspace_claim_rpcs: 1,
+  lost_task_id_reused_as_current_id: false,
   maximum_user_tab_claims_per_recovery: 1,
-  maximum_homepage_navigations_per_acquire_call: 1,
   homepage_navigation_soft_deadline_ms: 8_000,
   acquire_result_soft_deadline_ms: 12_000,
   existing_workspace_staged_verification: true,
@@ -543,6 +557,18 @@ function isReusableWorkspaceInfo(info) {
   }
 }
 
+function isBlankTaskTabInfo(info) {
+  return Boolean(info?.id) && String(info?.url ?? "") === "about:blank";
+}
+
+function limitedCandidate(info) {
+  return {
+    id: info?.id,
+    title: String(info?.title ?? ""),
+    url: String(info?.url ?? ""),
+  };
+}
+
 function isSearchPageInfo(info) {
   try {
     const url = new URL(String(info?.url ?? ""));
@@ -628,6 +654,563 @@ export async function rebindXhsSearchWorkspaceCandidate(browser, options = {}) {
     method: "rebind_exact_existing_workspace_candidate",
     tab: tabResult.value,
     workspace_candidate: candidate,
+    new_tabs_created: 0,
+    homepage_navigations_attempted: 0,
+    alternate_browser_used: false,
+    coordinate_action_used: false,
+    blind_retry_used: false,
+  };
+}
+
+export async function inspectXhsVisibleWorkspaceCandidates(browser) {
+  if (!browser?.user?.openTabs) {
+    throw new TypeError("a documented Codex in-app Browser binding is required");
+  }
+  const openTabsResult = await safeValue(() => browser.user.openTabs());
+  if (!openTabsResult.ok) {
+    return externalBlocked("visible_user_tabs_unavailable_during_workspace_bootstrap", {
+      browser_error_kind: openTabsResult.error_kind,
+      workspace_stage: "visible_user_tab_list",
+      workspace_stage_rpcs_attempted: 1,
+      user_tabs_inspected: 0,
+      user_tab_claims_attempted: 0,
+      new_tabs_created: 0,
+      homepage_navigations_attempted: 0,
+    });
+  }
+  const openTabs = openTabsResult.value ?? [];
+  const candidates = openTabs.filter(isReusableWorkspaceInfo);
+  if (candidates.length > 1) {
+    return blocked("visible_user_workspace_tab_not_unique", {
+      workspace_stage: "visible_user_tab_list",
+      workspace_stage_rpcs_attempted: 1,
+      user_tabs_inspected: openTabs.length,
+      user_workspace_candidates_found: candidates.length,
+      user_tab_claims_attempted: 0,
+      new_tabs_created: 0,
+      homepage_navigations_attempted: 0,
+    });
+  }
+  if (candidates.length === 1) {
+    return {
+      contract_id: XHS_SEARCH_NAVIGATION_CONTRACT.contract_id,
+      status: "visible_workspace_candidate_ready",
+      method: "list_exact_visible_user_workspace_candidate",
+      // claimTab requires the exact object returned by the current openTabs call.
+      visible_workspace_candidate: candidates[0],
+      continuation_contract: [
+        "call claimXhsVisibleWorkspaceCandidate exactly once with this candidate",
+        "then verify the returned exact task candidate with one fresh visible DOM RPC",
+      ],
+      workspace_stage: "visible_user_tab_list",
+      workspace_stage_rpcs_attempted: 1,
+      user_tabs_inspected: openTabs.length,
+      user_workspace_candidates_found: 1,
+      user_tab_claims_attempted: 0,
+      new_tabs_created: 0,
+      homepage_navigations_attempted: 0,
+      alternate_browser_used: false,
+      coordinate_action_used: false,
+      blind_retry_used: false,
+    };
+  }
+  return {
+    contract_id: XHS_SEARCH_NAVIGATION_CONTRACT.contract_id,
+    status: "workspace_creation_required",
+    method: "visible_user_workspace_absence_verified",
+    continuation_contract: [
+      "call createXhsSearchWorkspaceBlankCandidate exactly once",
+      "do not create a tab when any exact task or visible workspace candidate exists",
+    ],
+    workspace_stage: "visible_user_tab_list",
+    workspace_stage_rpcs_attempted: 1,
+    user_tabs_inspected: openTabs.length,
+    user_workspace_candidates_found: 0,
+    user_tab_claims_attempted: 0,
+    new_tabs_created: 0,
+    homepage_navigations_attempted: 0,
+    alternate_browser_used: false,
+    coordinate_action_used: false,
+    blind_retry_used: false,
+  };
+}
+
+export async function claimXhsVisibleWorkspaceCandidate(browser, options = {}) {
+  if (!browser?.user?.claimTab) {
+    throw new TypeError("a documented Codex in-app Browser binding is required");
+  }
+  const candidate = options.candidate;
+  if (!candidate?.id || !isReusableWorkspaceInfo(candidate)) {
+    return blocked("visible_workspace_candidate_not_verified_for_claim", {
+      workspace_stage_rpcs_attempted: 0,
+      user_tab_claims_attempted: 0,
+      new_tabs_created: 0,
+      homepage_navigations_attempted: 0,
+    });
+  }
+  const claimResult = await safeValue(() => browser.user.claimTab(candidate));
+  if (!claimResult.ok) {
+    return externalBlocked("visible_user_workspace_tab_claim_failed", {
+      browser_error_kind: claimResult.error_kind,
+      workspace_stage: "visible_user_tab_claim",
+      workspace_stage_rpcs_attempted: 1,
+      user_tab_claims_attempted: 1,
+      new_tabs_created: 0,
+      homepage_navigations_attempted: 0,
+    });
+  }
+  const tab = claimResult.value;
+  const workspaceCandidate = {
+    id: tab.id,
+    title: String(candidate.title ?? ""),
+    url: String(candidate.url ?? ""),
+  };
+  if (!workspaceCandidate.id || !isReusableWorkspaceInfo(workspaceCandidate)) {
+    return blocked("claimed_workspace_candidate_not_exact", {
+      workspace_stage: "visible_user_tab_claim",
+      workspace_stage_rpcs_attempted: 1,
+      user_tab_claims_attempted: 1,
+      new_tabs_created: 0,
+      homepage_navigations_attempted: 0,
+    });
+  }
+  return {
+    contract_id: XHS_SEARCH_NAVIGATION_CONTRACT.contract_id,
+    status: "workspace_tab_claimed",
+    method: "claim_exact_visible_user_workspace_candidate",
+    tab,
+    workspace_candidate: workspaceCandidate,
+    workspace_stage: "visible_user_tab_claim",
+    workspace_stage_rpcs_attempted: 1,
+    user_tab_claims_attempted: 1,
+    new_tabs_created: 0,
+    homepage_navigations_attempted: 0,
+    alternate_browser_used: false,
+    coordinate_action_used: false,
+    blind_retry_used: false,
+  };
+}
+
+export async function rebindXhsBlankWorkspaceCandidate(browser, options = {}) {
+  if (!browser?.tabs?.get) {
+    throw new TypeError("a documented Codex in-app Browser binding is required");
+  }
+  const candidate = options.candidate;
+  if (!isBlankTaskTabInfo(candidate)) {
+    return blocked("blank_workspace_candidate_not_verified_for_rebind", {
+      workspace_stage_rpcs_attempted: 0,
+      new_tabs_created: 0,
+      homepage_navigations_attempted: 0,
+    });
+  }
+  const tabResult = await safeValue(() => browser.tabs.get(candidate.id));
+  if (!tabResult.ok) {
+    return externalBlocked("blank_workspace_tab_rebind_failed", {
+      browser_error_kind: tabResult.error_kind,
+      workspace_stage: "blank_task_tab_rebind",
+      workspace_stage_rpcs_attempted: 1,
+      new_tabs_created: 0,
+      homepage_navigations_attempted: 0,
+    });
+  }
+  if (String(tabResult.value?.id ?? "") !== String(candidate.id)) {
+    return blocked("blank_workspace_tab_rebind_identity_mismatch", {
+      workspace_stage: "blank_task_tab_rebind",
+      workspace_stage_rpcs_attempted: 1,
+      new_tabs_created: 0,
+      homepage_navigations_attempted: 0,
+    });
+  }
+  return {
+    contract_id: XHS_SEARCH_NAVIGATION_CONTRACT.contract_id,
+    status: "blank_workspace_tab_rebound",
+    method: "rebind_exact_blank_workspace_candidate",
+    tab: tabResult.value,
+    workspace_candidate: limitedCandidate(candidate),
+    workspace_stage: "blank_task_tab_rebind",
+    workspace_stage_rpcs_attempted: 1,
+    new_tabs_created: 0,
+    homepage_navigations_attempted: 0,
+    alternate_browser_used: false,
+    coordinate_action_used: false,
+    blind_retry_used: false,
+  };
+}
+
+export async function createXhsSearchWorkspaceBlankCandidate(browser, options = {}) {
+  if (!browser?.tabs?.new) {
+    throw new TypeError("a documented Codex in-app Browser binding is required");
+  }
+  const discovery = options.discovery;
+  if (
+    discovery?.contract_id !== XHS_SEARCH_NAVIGATION_CONTRACT.contract_id ||
+    discovery?.status !== "workspace_creation_required" ||
+    discovery?.workspace_stage !== "visible_user_tab_list" ||
+    discovery?.workspace_stage_rpcs_attempted !== 1 ||
+    discovery?.user_workspace_candidates_found !== 0
+  ) {
+    return blocked("visible_workspace_absence_proof_required_before_tab_creation", {
+      workspace_stage_rpcs_attempted: 0,
+      new_tab_creation_attempts: 0,
+      new_tabs_created: 0,
+      homepage_navigations_attempted: 0,
+    });
+  }
+  const newTabResult = await safeValue(() => browser.tabs.new());
+  if (!newTabResult.ok) {
+    return externalBlocked("task_tab_creation_result_unavailable", {
+      browser_error_kind: newTabResult.error_kind,
+      workspace_stage: "task_tab_creation",
+      workspace_stage_rpcs_attempted: 1,
+      new_tab_creation_attempts: 1,
+      new_tabs_created: null,
+      homepage_navigations_attempted: 0,
+    });
+  }
+  const tab = newTabResult.value;
+  if (!tab?.id) {
+    return blocked("created_blank_workspace_candidate_missing_exact_id", {
+      workspace_stage: "task_tab_creation",
+      workspace_stage_rpcs_attempted: 1,
+      new_tab_creation_attempts: 1,
+      new_tabs_created: 1,
+      homepage_navigations_attempted: 0,
+    });
+  }
+  return {
+    contract_id: XHS_SEARCH_NAVIGATION_CONTRACT.contract_id,
+    status: "blank_workspace_candidate_created",
+    method: "create_one_exact_blank_task_tab",
+    tab,
+    workspace_candidate: { id: tab.id, title: "", url: "about:blank" },
+    workspace_stage: "task_tab_creation",
+    workspace_stage_rpcs_attempted: 1,
+    new_tab_creation_attempts: 1,
+    new_tabs_created: 1,
+    homepage_navigations_attempted: 0,
+    alternate_browser_used: false,
+    coordinate_action_used: false,
+    blind_retry_used: false,
+  };
+}
+
+export async function navigateXhsBlankWorkspaceCandidate(tab, options = {}) {
+  if (!tab?.goto) {
+    throw new TypeError("a documented in-app Browser Tab is required");
+  }
+  const candidate = options.candidate;
+  if (
+    !isBlankTaskTabInfo(candidate) ||
+    (tab.id !== undefined && String(tab.id) !== String(candidate.id))
+  ) {
+    return blocked("blank_workspace_candidate_context_not_verified", {
+      workspace_stage_rpcs_attempted: 0,
+      new_tabs_created: 0,
+      homepage_navigations_attempted: 0,
+    });
+  }
+  const gotoResult = await safeValue(() => tab.goto(XHS_HOME_URL));
+  if (!gotoResult.ok) {
+    return externalBlocked("homepage_navigation_result_unavailable", {
+      browser_error_kind: gotoResult.error_kind,
+      workspace_stage: "homepage_navigation",
+      workspace_stage_rpcs_attempted: 1,
+      workspace_candidate_id: candidate.id,
+      new_tabs_created: 0,
+      homepage_navigations_attempted: 1,
+      resume_contract:
+        "do not navigate again; after browser control is stable, call inspectXhsWorkspaceAfterNavigation once for this exact candidate id",
+    });
+  }
+  return {
+    contract_id: XHS_SEARCH_NAVIGATION_CONTRACT.contract_id,
+    status: "homepage_navigation_completed",
+    method: "navigate_exact_blank_candidate_to_xhs_homepage",
+    workspace_candidate_id: candidate.id,
+    workspace_stage: "homepage_navigation",
+    workspace_stage_rpcs_attempted: 1,
+    new_tabs_created: 0,
+    homepage_navigations_attempted: 1,
+    continuation_contract:
+      "call inspectXhsWorkspaceAfterNavigation exactly once; do not infer the final URL from goto completion",
+    alternate_browser_used: false,
+    coordinate_action_used: false,
+    blind_retry_used: false,
+  };
+}
+
+export async function inspectXhsWorkspaceAfterNavigation(browser, options = {}) {
+  if (!browser?.tabs?.list) {
+    throw new TypeError("a documented Codex in-app Browser binding is required");
+  }
+  const candidateId = String(options.candidateId ?? "");
+  if (!candidateId) {
+    return blocked("navigated_workspace_candidate_id_missing", {
+      workspace_stage_rpcs_attempted: 0,
+      new_tabs_created: 0,
+      homepage_navigations_attempted: 0,
+    });
+  }
+  const listResult = await safeValue(() => browser.tabs.list());
+  if (!listResult.ok) {
+    return externalBlocked("task_tabs_unavailable_after_homepage_navigation", {
+      browser_error_kind: listResult.error_kind,
+      workspace_stage: "post_navigation_task_tab_list",
+      workspace_stage_rpcs_attempted: 1,
+      workspace_candidate_id: candidateId,
+      new_tabs_created: 0,
+      homepage_navigations_attempted: 0,
+    });
+  }
+  const infos = listResult.value ?? [];
+  const exactMatches = infos.filter(
+    (info) => String(info?.id ?? "") === candidateId,
+  );
+  if (exactMatches.length !== 1) {
+    return externalBlocked("navigated_workspace_candidate_not_rebindable", {
+      workspace_stage: "post_navigation_task_tab_list",
+      workspace_stage_rpcs_attempted: 1,
+      workspace_candidate_id: candidateId,
+      exact_candidate_matches: exactMatches.length,
+      new_tabs_created: 0,
+      homepage_navigations_attempted: 0,
+    });
+  }
+  if (!isReusableWorkspaceInfo(exactMatches[0])) {
+    return blocked("homepage_navigation_not_verified_by_exact_task_tab", {
+      workspace_stage: "post_navigation_task_tab_list",
+      workspace_stage_rpcs_attempted: 1,
+      workspace_candidate: limitedCandidate(exactMatches[0]),
+      new_tabs_created: 0,
+      homepage_navigations_attempted: 0,
+    });
+  }
+  return {
+    contract_id: XHS_SEARCH_NAVIGATION_CONTRACT.contract_id,
+    status: "workspace_candidate_ready",
+    method: "list_exact_workspace_candidate_after_navigation",
+    workspace_candidate: limitedCandidate(exactMatches[0]),
+    workspace_stage: "post_navigation_task_tab_list",
+    workspace_stage_rpcs_attempted: 1,
+    new_tabs_created: 0,
+    homepage_navigations_attempted: 0,
+    alternate_browser_used: false,
+    coordinate_action_used: false,
+    blind_retry_used: false,
+  };
+}
+
+export async function recoverXhsWorkspaceAfterIndeterminateNavigation(
+  browser,
+  options = {},
+) {
+  const attempt = options.navigationAttempt;
+  const candidateId = String(attempt?.workspace_candidate_id ?? "");
+  if (
+    !candidateId ||
+    attempt?.browser_rpc !== "tab.goto" ||
+    attempt?.called_exactly_once !== true ||
+    attempt?.result_received !== false ||
+    attempt?.homepage_navigations_attempted !== 1 ||
+    attempt?.retry_performed !== false
+  ) {
+    return blocked("indeterminate_navigation_attempt_proof_required", {
+      workspace_stage: "post_indeterminate_navigation_recovery",
+      workspace_stage_rpcs_attempted: 0,
+      navigation_replayed: false,
+      new_tabs_created: 0,
+      homepage_navigations_attempted: 0,
+    });
+  }
+  const inspected = await inspectXhsWorkspaceAfterNavigation(browser, {
+    candidateId,
+  });
+  return {
+    ...inspected,
+    method:
+      inspected.status === "workspace_candidate_ready"
+        ? "recover_exact_workspace_after_indeterminate_navigation_via_single_task_list"
+        : inspected.method,
+    workspace_stage: "post_indeterminate_navigation_recovery",
+    navigation_result_received: false,
+    navigation_outcome_inferred: false,
+    navigation_replayed: false,
+    new_tabs_created: 0,
+    homepage_navigations_attempted: 0,
+    recovery_rpcs_attempted: 1,
+    continuation_contract:
+      inspected.status === "workspace_candidate_ready"
+        ? [
+            "call rebindXhsSearchWorkspaceCandidate exactly once with this verified candidate",
+            "then call verifyXhsSearchWorkspaceCandidate exactly once with the current required profile id",
+          ]
+        : "stop without another navigation, tab creation, task-list recovery, DOM read, or search action",
+  };
+}
+
+export async function recoverXhsReleasedWorkspaceAfterTaskCandidateLoss(
+  browser,
+  options = {},
+) {
+  if (!browser?.user?.openTabs) {
+    throw new TypeError("a documented Codex in-app Browser binding is required");
+  }
+  const lossProof = options.lossProof;
+  const lostCandidateId = String(lossProof?.workspace_candidate_id ?? "");
+  if (
+    !lostCandidateId ||
+    lossProof?.status !== "blocked_external_runtime" ||
+    lossProof?.reason !== "navigated_workspace_candidate_not_rebindable" ||
+    lossProof?.exact_candidate_matches !== 0 ||
+    lossProof?.recovery_rpcs_attempted !== 1 ||
+    lossProof?.navigation_replayed !== false ||
+    lossProof?.additional_browser_actions_after_recovery !== 0
+  ) {
+    return blocked("task_candidate_loss_proof_required_before_visible_recovery", {
+      workspace_stage: "released_workspace_visible_list",
+      workspace_stage_rpcs_attempted: 0,
+      visible_workspace_recovery_rpcs_attempted: 0,
+      user_tabs_inspected: 0,
+      user_tab_claims_attempted: 0,
+      new_tabs_created: 0,
+      homepage_navigations_attempted: 0,
+    });
+  }
+  const openTabsResult = await safeValue(() => browser.user.openTabs());
+  if (!openTabsResult.ok) {
+    return externalBlocked("visible_user_tabs_unavailable_after_task_candidate_loss", {
+      browser_error_kind: openTabsResult.error_kind,
+      workspace_stage: "released_workspace_visible_list",
+      workspace_stage_rpcs_attempted: 1,
+      visible_workspace_recovery_rpcs_attempted: 1,
+      lost_workspace_candidate_id: lostCandidateId,
+      user_tabs_inspected: 0,
+      user_workspace_candidates_found: 0,
+      user_tab_claims_attempted: 0,
+      new_tabs_created: 0,
+      homepage_navigations_attempted: 0,
+    });
+  }
+  const openTabs = openTabsResult.value ?? [];
+  const candidates = openTabs.filter(isReusableWorkspaceInfo);
+  if (candidates.length > 1) {
+    return blocked("released_visible_workspace_candidate_not_unique", {
+      workspace_stage: "released_workspace_visible_list",
+      workspace_stage_rpcs_attempted: 1,
+      visible_workspace_recovery_rpcs_attempted: 1,
+      lost_workspace_candidate_id: lostCandidateId,
+      user_tabs_inspected: openTabs.length,
+      user_workspace_candidates_found: candidates.length,
+      user_tab_claims_attempted: 0,
+      new_tabs_created: 0,
+      homepage_navigations_attempted: 0,
+    });
+  }
+  if (candidates.length === 0) {
+    return externalBlocked("released_visible_workspace_candidate_not_found", {
+      workspace_stage: "released_workspace_visible_list",
+      workspace_stage_rpcs_attempted: 1,
+      visible_workspace_recovery_rpcs_attempted: 1,
+      lost_workspace_candidate_id: lostCandidateId,
+      user_tabs_inspected: openTabs.length,
+      user_workspace_candidates_found: 0,
+      user_tab_claims_attempted: 0,
+      new_tabs_created: 0,
+      homepage_navigations_attempted: 0,
+    });
+  }
+  return {
+    contract_id: XHS_SEARCH_NAVIGATION_CONTRACT.contract_id,
+    status: "released_workspace_candidate_ready",
+    method: "list_one_exact_visible_workspace_after_task_candidate_loss",
+    released_workspace_candidate: candidates[0],
+    lost_workspace_candidate_id: lostCandidateId,
+    continuity_to_lost_task_id_inferred: false,
+    continuation_contract:
+      "call claimXhsReleasedWorkspaceCandidate exactly once with this complete discovery result; treat the claimed tab id as a new current identity",
+    workspace_stage: "released_workspace_visible_list",
+    workspace_stage_rpcs_attempted: 1,
+    visible_workspace_recovery_rpcs_attempted: 1,
+    user_tabs_inspected: openTabs.length,
+    user_workspace_candidates_found: 1,
+    user_tab_claims_attempted: 0,
+    new_tabs_created: 0,
+    homepage_navigations_attempted: 0,
+    alternate_browser_used: false,
+    coordinate_action_used: false,
+    blind_retry_used: false,
+  };
+}
+
+export async function claimXhsReleasedWorkspaceCandidate(browser, options = {}) {
+  if (!browser?.user?.claimTab) {
+    throw new TypeError("a documented Codex in-app Browser binding is required");
+  }
+  const discovery = options.discovery;
+  const candidate = discovery?.released_workspace_candidate;
+  if (
+    discovery?.contract_id !== XHS_SEARCH_NAVIGATION_CONTRACT.contract_id ||
+    discovery?.status !== "released_workspace_candidate_ready" ||
+    discovery?.workspace_stage !== "released_workspace_visible_list" ||
+    discovery?.visible_workspace_recovery_rpcs_attempted !== 1 ||
+    discovery?.user_workspace_candidates_found !== 1 ||
+    !discovery?.lost_workspace_candidate_id ||
+    !candidate?.id ||
+    !isReusableWorkspaceInfo(candidate)
+  ) {
+    return blocked("released_workspace_discovery_proof_required_before_claim", {
+      workspace_stage: "released_workspace_exact_claim",
+      workspace_stage_rpcs_attempted: 0,
+      user_tab_claims_attempted: 0,
+      new_tabs_created: 0,
+      homepage_navigations_attempted: 0,
+    });
+  }
+  const claimResult = await safeValue(() => browser.user.claimTab(candidate));
+  if (!claimResult.ok) {
+    return externalBlocked("released_workspace_exact_claim_failed", {
+      browser_error_kind: claimResult.error_kind,
+      workspace_stage: "released_workspace_exact_claim",
+      workspace_stage_rpcs_attempted: 1,
+      lost_workspace_candidate_id: discovery.lost_workspace_candidate_id,
+      user_tab_claims_attempted: 1,
+      new_tabs_created: 0,
+      homepage_navigations_attempted: 0,
+    });
+  }
+  const tab = claimResult.value;
+  const workspaceCandidate = {
+    id: tab?.id,
+    title: String(candidate.title ?? ""),
+    url: String(candidate.url ?? ""),
+  };
+  if (!workspaceCandidate.id || !isReusableWorkspaceInfo(workspaceCandidate)) {
+    return blocked("claimed_released_workspace_missing_new_exact_task_id", {
+      workspace_stage: "released_workspace_exact_claim",
+      workspace_stage_rpcs_attempted: 1,
+      lost_workspace_candidate_id: discovery.lost_workspace_candidate_id,
+      user_tab_claims_attempted: 1,
+      new_tabs_created: 0,
+      homepage_navigations_attempted: 0,
+    });
+  }
+  return {
+    contract_id: XHS_SEARCH_NAVIGATION_CONTRACT.contract_id,
+    status: "released_workspace_tab_claimed",
+    method: "claim_one_exact_released_workspace_after_task_candidate_loss",
+    tab,
+    workspace_candidate: workspaceCandidate,
+    lost_workspace_candidate_id: discovery.lost_workspace_candidate_id,
+    current_workspace_candidate_id: workspaceCandidate.id,
+    lost_task_id_reused_as_current_id: false,
+    continuity_to_lost_task_id_inferred: false,
+    continuation_contract: [
+      "use the newly returned task id as the only current workspace identity",
+      "call verifyXhsSearchWorkspaceCandidate exactly once with this new candidate and the current required profile id",
+    ],
+    workspace_stage: "released_workspace_exact_claim",
+    workspace_stage_rpcs_attempted: 1,
+    user_tab_claims_attempted: 1,
     new_tabs_created: 0,
     homepage_navigations_attempted: 0,
     alternate_browser_used: false,
@@ -936,23 +1519,9 @@ async function recoverCreatedTab(browser, createdTabId, timeoutMs, deadlineAt) {
 }
 
 export async function acquireXhsSearchWorkspace(browser, options = {}) {
-  if (!browser?.tabs?.list || !browser?.tabs?.new || !browser?.tabs?.get) {
+  if (!browser?.tabs?.list) {
     throw new TypeError("a documented Codex in-app Browser binding is required");
   }
-  const timeoutMs = Math.min(
-    Math.max(Number(options.probeTimeoutMs ?? 3_000), 500),
-    5_000,
-  );
-  const navigationSoftDeadlineMs = Math.min(
-    Math.max(
-      Number(
-        options.navigationSoftDeadlineMs ??
-          XHS_SEARCH_NAVIGATION_CONTRACT.homepage_navigation_soft_deadline_ms,
-      ),
-      10,
-    ),
-    12_000,
-  );
   const acquireResultSoftDeadlineMs = Math.min(
     Math.max(
       Number(
@@ -1016,89 +1585,63 @@ export async function acquireXhsSearchWorkspace(browser, options = {}) {
       blind_retry_used: false,
     });
   }
-
-  const claimedWorkspace = await claimVisibleUserWorkspace(browser, timeoutMs, {
-    deadlineAt,
-  });
-  if (claimedWorkspace.kind === "result") {
-    return withBindingEvidence(claimedWorkspace.result);
+  const blankCandidates = infos.filter(isBlankTaskTabInfo);
+  if (blankCandidates.length > 1 && !options.preferredBlankTabId) {
+    return withBindingEvidence(blocked("blank_workspace_candidate_not_unique", {
+      task_tabs_inspected: infos.length,
+      blank_workspace_candidates_found: blankCandidates.length,
+      workspace_stage: "task_tab_list",
+      workspace_stage_rpcs_attempted: 1,
+      new_tabs_created: 0,
+      homepage_navigations_attempted: 0,
+    }));
   }
-
-  const newTabResult = await safeValueBeforeDeadline(
-    () => browser.tabs.new(),
-    remainingDeadlineMs(deadlineAt),
-  );
-  if (!newTabResult.ok) {
-    const creationIndeterminate = newTabResult.error_kind === "soft_deadline";
-    return withBindingEvidence(
-      externalBlocked(
-        creationIndeterminate
-          ? "task_tab_creation_indeterminate_before_acquire_deadline"
-          : "task_tab_creation_failed",
-        {
-          browser_error_kind: newTabResult.error_kind,
-          acquire_deadline_stage: "task_tab_creation",
-          new_tab_creation_attempts: 1,
-          new_tabs_created: creationIndeterminate ? null : 0,
-          homepage_navigations_attempted: 0,
-          resume_contract:
-            "do not call acquire again in the same acceptance; after browser control is stable, inspect task tabs once and preserve exact Xiaohongshu workspaces while leaving any blank indeterminate tab untouched for handoff",
-        },
-      ),
-    );
-  }
-  const tab = newTabResult.value;
-  const createdTabId = tab.id;
-  const gotoResult = await safeValueBeforeDeadline(
-    () => tab.goto(XHS_HOME_URL),
-    remainingDeadlineMs(deadlineAt, navigationSoftDeadlineMs),
-  );
-  if (!gotoResult.ok && gotoResult.error_kind === "soft_deadline") {
-    return withBindingEvidence(
-      externalBlocked("homepage_navigation_indeterminate_before_acquire_deadline", {
-        homepage_navigation_result: "soft_deadline_indeterminate",
-        homepage_navigation_soft_deadline_ms: navigationSoftDeadlineMs,
-        acquire_result_soft_deadline_ms: acquireResultSoftDeadlineMs,
-        acquire_deadline_stage: "homepage_navigation",
-        created_tab_id: createdTabId,
-        new_tabs_created: 1,
-        homepage_navigations_attempted: 1,
-        resume_contract:
-          "do not call acquire again in the same acceptance; after browser control is stable, inspect task tabs once and preserve any exact Xiaohongshu workspace tab as the next safe checkpoint",
-      }),
-    );
-  }
-  const proof = await verifyWorkspace(
-    tab,
-    timeoutMs,
-    remainingDeadlineMs(deadlineAt),
-  );
-  if (proof.ok && proof.state.workspace_verified) {
+  const selectedBlank = options.preferredBlankTabId
+    ? blankCandidates.find(
+        (info) => String(info.id) === String(options.preferredBlankTabId),
+      )
+    : blankCandidates[0];
+  if (selectedBlank) {
     return withBindingEvidence({
       contract_id: XHS_SEARCH_NAVIGATION_CONTRACT.contract_id,
-      status: "workspace_ready",
-      method: "create_one_tab_then_homepage",
-      tab,
-      homepage_navigation_result: gotoResult.ok ? "ok" : gotoResult.error_kind,
-      workspace_state: proof.state,
-      new_tabs_created: 1,
-      homepage_navigations_attempted: 1,
+      status: "workspace_bootstrap_candidate_ready",
+      method: "list_exact_existing_blank_workspace_candidate",
+      workspace_candidate: limitedCandidate(selectedBlank),
+      continuation_contract: [
+        "call rebindXhsBlankWorkspaceCandidate exactly once with this candidate",
+        "then call navigateXhsBlankWorkspaceCandidate exactly once with the rebound tab",
+        "after navigation settles, call inspectXhsWorkspaceAfterNavigation exactly once for the same candidate id",
+      ],
+      task_tabs_inspected: infos.length,
+      blank_workspace_candidates_found: 1,
+      workspace_stage: "task_tab_list",
+      workspace_stage_rpcs_attempted: 1,
+      new_tabs_created: 0,
+      homepage_navigations_attempted: 0,
       alternate_browser_used: false,
       coordinate_action_used: false,
       blind_retry_used: false,
     });
   }
-  if (!proof.ok || !gotoResult.ok) {
-    return withBindingEvidence(
-      await recoverCreatedTab(browser, createdTabId, timeoutMs, deadlineAt),
-    );
-  }
-  return withBindingEvidence(blocked("homepage_workspace_not_verified_after_single_navigation", {
-    homepage_navigation_result: gotoResult.ok ? "ok" : gotoResult.error_kind,
-    workspace_state: proof.state,
-    new_tabs_created: 1,
-    homepage_navigations_attempted: 1,
-  }));
+  return withBindingEvidence({
+    contract_id: XHS_SEARCH_NAVIGATION_CONTRACT.contract_id,
+    status: "workspace_bootstrap_discovery_required",
+    method: "task_workspace_absence_verified_after_single_list",
+    continuation_contract: [
+      "call inspectXhsVisibleWorkspaceCandidates exactly once",
+      "claim only one exact visible Xiaohongshu workspace candidate",
+      "create a blank task tab only after visible workspace absence is verified",
+    ],
+    task_tabs_inspected: infos.length,
+    blank_workspace_candidates_found: 0,
+    workspace_stage: "task_tab_list",
+    workspace_stage_rpcs_attempted: 1,
+    new_tabs_created: 0,
+    homepage_navigations_attempted: 0,
+    alternate_browser_used: false,
+    coordinate_action_used: false,
+    blind_retry_used: false,
+  });
 }
 
 export async function recoverXhsSearchPage(browser, options = {}) {

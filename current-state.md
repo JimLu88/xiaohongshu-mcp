@@ -1,6 +1,6 @@
 # 畔色小红书项目当前状态
 
-更新时间：2026-08-25 13:56 +08:00
+更新时间：2026-08-28 16:48 +08:00
 项目目录：`D:\AI\AI 媒体爬虫\xiaohongshu-mcp`
 分支 / HEAD：`feature/panse-feedback-loop` / `0834696`
 
@@ -1369,3 +1369,518 @@ slot 2 的侧栏“我”现场 profile id 为 `634c02a1000000001901c0e6`，与�
 - `blocked_external_runtime` 有限结论与停止条件已自动发送回原 01 任务
   `01a02f3d-c2b7-72f0-8be7-58847f6f08a5`；01 未获授权继续平台链。回流回执：
   `daily_runs/2026-08-25/in_app_search_single_visible_dom_blocked_external_runtime_return_to_01_receipt_20260825.json`。
+
+## 37. 2026-08-28 新日计划与工作区获取无结果
+
+- 01 已建立 2026-08-28 完全独立的五账号计划：总深读 134、待审草稿上限 50、关注目标
+  4；旧日额度、旧草稿、旧批准与旧账号状态均未顺延。
+- 8 月 25 日的外部运行时阻塞以 Browser 组件从 `26.818.61809` 升至
+  `26.820.80927` 作为唯一新事实，允许一次从零开始的 v10 真实验收。第一段
+  `acquireXhsSearchWorkspace(iab)` 只调用一次，却在 15 秒内无 caller-visible 结果并重置
+  控制会话；没有第二次调用。
+- 恢复后只读读回只有 id=1 `about:blank`，可见用户标签为 0；该标签已标记为安全断点。
+  没有确认的新建、导航、DOM 读取、搜索、填写、回车或点击，也没有登录、切号、评论、
+  回复、关注、发布或发送。
+- slot 1 因此标记为 `blocked_external_runtime`；这与 8 月 25 日是同一控制结果丢失类，
+  不再自动循环至 02。停止回执：
+  `daily_runs/2026-08-28/account_1_stop_receipt_search_workspace_acquire_timeout_20260828.json`。
+
+### 37.1 用户已明确授权新版本兼容性自动转交 02
+
+- 用户已明确要求：遇到问题自动转交 `02｜小红书审核与程序维护` 修复，并优先保持
+  Codex 内置浏览器操作。01 已把第 37 节的新版本兼容性证据发送给固定 02，02 仅可在
+  项目可控范围内评估和最小修复；送达不等于修复完成或平台通过。
+- 01 不重放这次 stage 1，不新增真实页面读取、搜索、填写、回车、导航或点击。若 02 判断
+  必须修改/替换全局 Browser runtime 或插件，仍须用户当前明确授权。
+- 自动转交回执：
+  `daily_runs/2026-08-28/account_1_auto_repair_handoff_search_workspace_acquire_timeout_20260828.json`。
+
+### 38.1 v11 主页导航单 RPC 无结果已停止
+
+- 01 按 v11 continuation 逐段调用一次：第一段 `browser.tabs.list` 成功返回唯一 id=1
+  `about:blank`，第二段 `browser.tabs.get` 成功精确重绑该标签；均没有新建或导航。
+- 第三段只调用一次该标签的 `tab.goto` 首页导航，15 秒内没有 caller-visible 结果并重置
+  控制会话。导航是否已开始、完成或失败均未知；按合同未调用后续任务标签清单、未重试，
+  也未读 DOM、搜索或进入详情。
+- 当前身份、登录和风险均未核验；深读、草稿、关注、评论、回复、发布和发送均为 0。
+  停止回执：
+  `daily_runs/2026-08-28/account_1_stop_receipt_search_v11_homepage_navigation_timeout_20260828.json`。
+
+## 38. Browser 26.820 空工作区获取兼容修复（v11，待 01 真实终验）
+
+- 02 对第 37 节现场与 Browser `26.820.80927` 文档化 API 做了项目内兼容核对。新版
+  `tabs.list`、`user.openTabs`、`claimTab`、`tabs.get`、`tabs.new` 与 `tab.goto` 仍是
+  分离的 Promise 控制调用，`list/new/goto` 没有文档化单调用超时参数。第 37 节唯一
+  v10 调用无结构化结果、恢复后只剩 id=1 `about:blank`，只能证明聚合 acquire 存在
+  结果丢失窗口；不能倒推具体完成或阻塞在清单、可见标签、新建还是其他阶段。
+- 已把搜索工作区合同升级为 `panse-xhs-iab-search-navigation.v11`。第一段
+  `acquireXhsSearchWorkspace(iab)` 现在永远只调用一次 `browser.tabs.list()`；它只返回
+  唯一现有小红书候选、唯一精确空白候选，或要求继续核对可见工作区的结构化状态，
+  不再在同一次调用里执行 `openTabs`、`claimTab`、`tabs.new`、`goto` 或 DOM。
+- 空工作区启动已拆为单 RPC 阶段：可见标签清单、精确接管、精确空白标签重绑、
+  条件化新建、精确空白标签导航、导航后同 id 任务标签清单核验。当前保存的唯一
+  id=1 `about:blank` 会被优先返回并重绑，不能触发重复新建。每段无结果都停在该已知
+  RPC，不重放、不任意选择、不推断导航成功。
+- 身份、登录、风险、唯一可操作搜索目标、精确公开 profile、属性指纹、禁止 `.first()`、
+  禁止坐标、禁止直接搜索 URL、禁止换浏览器与零盲重试门禁均未降低。工作区完成后
+  仍须用同一份新鲜可见 DOM 完成既有身份和风险验真，02 未执行真实页面终验。
+- 本地技术回归：搜索 37、详情 14、轮播 7，共 58 项通过、0 失败；6 个 JS 文件语法
+  检查通过。这只证明项目合同，不等于平台成功。
+- 修复回执：
+  `daily_runs/2026-08-28/in_app_search_workspace_bootstrap_v11_program_repair_receipt_20260828.json`。
+  自动回流回执：
+  `daily_runs/2026-08-28/in_app_search_workspace_bootstrap_v11_return_to_01_receipt_20260828.json`。
+- 有限修复结果与唯一安全终验链已自动发送回原 01 任务
+  `01a02f3d-c2b7-72f0-8be7-58847f6f08a5`；发送不等于平台终验已开始或成功。
+- 01 唯一下一步：复用当前 IAB binding 与保存的 id=1 `about:blank`，按 v11 返回的
+  continuation 逐段各调用一次，任一段非成功或无 caller-visible 结果立即停止。只有
+  同一精确 id 被任务标签清单读回为真实小红书 URL 后，才可重绑并执行既有单份新鲜
+  DOM 的身份、登录、风险与唯一搜索目标验真。
+
+## 39. v11 首页导航结果丢失的零动作恢复（v12，待 01 真实终验）
+
+- 第 38.1 节证明 v11 的任务标签清单与精确 id=1 空白标签重绑各成功一次；唯一
+  `tab.goto` 首页导航 RPC 无 caller-visible 结果并重置控制会话。项目不能强制该仓库外
+  RPC 结算，也不能从结果缺失推断导航是否开始、完成或失败。
+- 已识别项目内最小缺口：v11 已有导航后按同一 id 只读任务标签清单的验真函数，但
+  continuation 只覆盖 `goto` 正常返回后的路径，没有把“控制恢复后、凭精确停止证明
+  执行唯一一次零动作清单恢复”固化为公共合同。
+- 搜索合同升级为 `panse-xhs-iab-search-navigation.v12`，新增
+  `recoverXhsWorkspaceAfterIndeterminateNavigation(browser, { navigationAttempt })`。调用前
+  必须证明：RPC 精确为 `tab.goto`、只调用 1 次、结果缺失、候选 id 精确、导航尝试 1、
+  重试 0；缺少任何一项都在 Browser RPC 前失败关闭。
+- 证明通过后只调用一次 `browser.tabs.list()`。只有同一 id 当前实际为小红书 URL 才
+  返回 `workspace_candidate_ready`；同一 id 仍为 `about:blank`、id 缺失、清单无结果或
+  任何不精确状态都停止。函数不重放导航、不新建或接管标签、不读 DOM、不搜索，也不
+  把 `goto` 结果写成成功。
+- 本地技术回归：搜索 40、详情 14、轮播 7，共 61 项通过、0 失败；6 个 JS 文件语法
+  检查通过。这不是平台终验。
+- 修复回执：
+  `daily_runs/2026-08-28/in_app_search_v12_indeterminate_navigation_recovery_program_repair_receipt_20260828.json`。
+  自动回流回执：
+  `daily_runs/2026-08-28/in_app_search_v12_indeterminate_navigation_recovery_return_to_01_receipt_20260828.json`。
+- 有限修复结果与唯一零动作恢复步骤已自动发送回原 01 任务
+  `01a02f3d-c2b7-72f0-8be7-58847f6f08a5`；发送不等于平台恢复成功。
+- 01 唯一下一步：复用当前 IAB binding，携带第 38.1 节 stage 3 的有限证明与 id=1，
+  只调用一次 v12 零动作恢复函数。只有它新鲜读回同一 id 为真实小红书 URL，才可精确
+  重绑并执行既有单份新鲜 DOM 的身份、登录、风险与唯一搜索目标验真；任一非成功或
+  无结果都停止，不再导航或恢复。
+
+### 39.1 v12 零动作恢复明确阻塞
+
+- 01 以第 38.1 节的完整有限 provenance（`tab.goto`、调用 1 次、结果缺失、候选 id=1、
+  导航尝试 1、重试 0）只调用一次
+  `recoverXhsWorkspaceAfterIndeterminateNavigation`。该函数只发出一次新鲜任务标签清单
+  RPC，并明确返回 `blocked_external_runtime`：`navigated_workspace_candidate_not_rebindable`、
+  `exact_candidate_matches=0`。
+- 因此不能把 id=1 当作当前小红书工作区，也不能推断导航结果。01 没有第二次恢复、
+  导航、新建或接管标签，未读 DOM、搜索或进入详情；身份、登录和风险仍未核验，
+  深读、草稿、关注、评论、回复、发布和发送均为 0。
+- 停止回执：
+  `daily_runs/2026-08-28/account_1_stop_receipt_search_v12_indeterminate_navigation_recovery_blocked_20260828.json`。
+
+## 40. v12 精确候选缺失收口为外部运行时阻塞
+
+- 02 已核对第 39.1 节的明确结果：唯一获准的 v12 恢复已用 1 次
+  `browser.tabs.list()` 返回 `blocked_external_runtime`、
+  `navigated_workspace_candidate_not_rebindable`、`exact_candidate_matches=0`。这不是结果
+  丢失，而是当前受控任务标签清单明确没有唯一授权的 id=1。
+- 任务标签在控制内核重置后的生命周期与保留属于仓库外 Browser runtime。项目代码
+  不能用过期 id 重建当前标签，也不能把未知可见标签、计划 URL 或历史 `about:blank`
+  冒充同一工作区。
+- 当前边界禁止第二次恢复或导航、标签新建或接管；新增可见用户标签清单也是另一条
+  Browser 恢复链，且仅凭它不能证明与已消失 id=1 的连续性。因此没有安全的项目内
+  兼容路径，不创建 v13，不修改代码、测试、身份/风险门禁或全局 Browser 插件。
+- 活动合同冻结在 `panse-xhs-iab-search-navigation.v12`。同一证据不得继续 01→02 版本
+  循环。只有用户当前明确授权更广的有界 Browser 恢复面或全局 Browser 修改、外部运行时
+  已验证改变，或出现能保留同等精确证据的新文档化 API，才可重新打开。
+- 本次只读评估未重跑真实恢复、导航、标签、DOM、搜索或详情动作。上一 v12 修复回执的
+  61 项本地测试与 6 个语法检查仍只证明项目代码，不等于平台成功或当前标签存在。
+- 结构化阻塞回执：
+  `daily_runs/2026-08-28/in_app_search_v12_candidate_not_rebindable_blocked_external_runtime_receipt_20260828.json`。
+  回流回执：
+  `daily_runs/2026-08-28/in_app_search_v12_candidate_not_rebindable_blocked_external_runtime_return_to_01_receipt_20260828.json`。
+- 有限阻塞结论与停止条件已自动发送回原 01 任务
+  `01a02f3d-c2b7-72f0-8be7-58847f6f08a5`；01 不得自动续跑当前链。
+- 01 唯一下一步：停止当前 slot 1 链，不再恢复、导航、新建/接管标签、读取可见用户标签、
+  DOM、搜索或详情，也不恢复当日计数；等待一项明确重开条件成立。
+
+### 40.1 01 已同步最终停止状态
+
+- 01 已核对第 40 节及两份阻塞回执，并将 2026-08-28 slot 1 从“已转交 02”同步为最终
+  `blocked_external_runtime`。没有新的浏览器、平台或账号动作，也没有恢复当日计数。
+- 只有第 40 节列出的当前明确授权或新的可验证运行时/API 事实出现后，才可重新开启；
+  在此之前不再自动循环至 02。
+
+## 41. 用户扩大授权后的释放工作区恢复（v13，待 01 真实终验）
+
+- 用户已在当前任务明确扩大修复授权。02 重新核对 v12 阻塞后确认：旧任务 id=1
+  `exact_candidate_matches=0` 只证明旧控制绑定消失，不能证明底层 IAB 页面已关闭；控制
+  重置后页面可能释放到文档化 `browser.user.openTabs()` 表面。
+- 搜索合同升级为 `panse-xhs-iab-search-navigation.v13`。新增
+  `recoverXhsReleasedWorkspaceAfterTaskCandidateLoss(browser, { lossProof })`：必须先核对
+  v12 的有限结构化丢失证明，再只调用一次 `browser.user.openTabs()`。0 个、2 个以上或
+  结果不可用都失败关闭；只有 1 个精确小红书首页/搜索页候选才返回完整当前 claim
+  handle，且不声称它与旧 id=1 连续。
+- 新增 `claimXhsReleasedWorkspaceCandidate(browser, { discovery })`：只接受上一段完整
+  discovery，只接管该精确对象 1 次，并把 Browser 返回的新任务 id 作为唯一当前 id；
+  旧 id=1 永不复用。接管后仍须用一次新鲜可见 DOM 重新证明当前账号、登录、风险和
+  唯一搜索目标，不能继承任何旧身份或页面结论。
+- 该修复不重放导航、不新建标签、不用 `.first()`、坐标、直接搜索 URL 或其他浏览器，
+  也无需修改全局 Browser runtime/plugin。
+- 本地技术回归：搜索 46、详情 14、轮播 7，共 67 项通过、0 失败；6 个 JS 文件语法
+  检查通过。这不是平台终验。
+- 修复回执：
+  `daily_runs/2026-08-28/in_app_search_v13_released_workspace_recovery_program_repair_receipt_20260828.json`。
+  自动回流回执：
+  `daily_runs/2026-08-28/in_app_search_v13_released_workspace_recovery_return_to_01_receipt_20260828.json`。
+- 有限修复结果与唯一安全终验步骤已自动发送回原 01 任务
+  `01a02f3d-c2b7-72f0-8be7-58847f6f08a5`；发送不等于平台恢复成功。
+- 01 唯一下一步：复用当前 IAB binding，以 v12 有限丢失证明只调用一次释放工作区
+  清单函数；若且仅若返回 1 个候选，再只调用一次精确接管函数。接管成功后只认新 id，
+  并执行既有单份新鲜 DOM 的身份、登录、风险与唯一搜索目标验真。任一非成功或无结果
+  都停止，不导航、不新建标签、不复用 id=1。
+
+### 41.1 v13 已释放工作区的单份身份快照无结果，已停止并转交 02
+
+- 01 按 v13 严格执行一次释放工作区清单：唯一候选为一个真实小红书详情页；随后只对该
+  精确对象接管一次，Browser 返回新的任务 id=2，且没有复用或推断旧 id=1 的连续性。
+- 对新 id=2 的唯一允许后续动作——单份新鲜可见 DOM 身份、登录、风险和唯一搜索目标验真——
+  在 15 秒内没有 caller-visible 结果，控制内核重置。因而账号、登录、风险与搜索入口均
+  仍未核验，不能把候选详情页计入浏览或深读。
+- 01 没有重试 DOM、搜索、详情、导航或标签创建，也没有登录、切号、评论、回复、关注、
+  发布或发送；当日各计数保持为 0。停止回执：
+  `daily_runs/2026-08-28/account_1_stop_receipt_search_v13_released_workspace_identity_timeout_20260828.json`。
+- 这是一条新、可复现的项目内控制结果丢失证据；依据用户当前的自动修复授权，01 已将
+  有限证据自动转交固定 02。02 应先做有界技术评估；在修复并给出新的唯一恢复步骤前，
+  01 不再执行任何 Browser 或平台动作。
+
+## 42. v13 新任务 id 的身份 DOM 无结果收口为外部运行时阻塞
+
+- 02 已核对第 41.1 节：v13 的 lossProof、唯一可见标签读取与精确 claim 均成功返回，
+  Browser 分配新任务 id=2；唯一一次 `dom_cua.get_visible_dom` 新鲜验真无 caller-visible
+  结果并重置控制内核。没有 DOM payload，不能证明账号、登录、风险或唯一搜索目标。
+- claim 成功结果只含当前候选、URL 和新任务 id，不含上述页面证据。截图、AX、
+  Playwright 或再次接管都需要新增真实 Browser RPC，不能恢复刚才丢失的 DOM payload；
+  截图/AX 也不满足当前精确可交互 node 与属性指纹合同，Playwright evaluate 此前已有同类
+  不返回实证。旧 DOM 或其他任务 id 的页面证据不得复用。
+- 因此没有安全的项目内最小修复：活动合同冻结在
+  `panse-xhs-iab-search-navigation.v13`，不创建 v14，不修改代码、测试、身份/风险门禁或
+  全局 Browser runtime/plugin。同一证据不得继续版本循环。
+- 只有 Browser runtime/控制服务已验证能返回正式 DOM、用户当前明确授权修改全局
+  Browser、出现不新增真实页面 RPC 却能提供同等当前证据的新文档化 API，或以后在外部
+  运行时稳定后另行明确授权全新终验，才可重新打开。
+- 本次有界评估未重复 DOM、恢复/接管、导航、标签、搜索或详情动作。上一 v13 修复回执
+  的 67 项本地测试与 6 个语法检查只证明项目代码，不等于平台成功。
+- 结构化阻塞回执：
+  `daily_runs/2026-08-28/in_app_search_v13_released_workspace_identity_dom_blocked_external_runtime_receipt_20260828.json`。
+  回流回执：
+  `daily_runs/2026-08-28/in_app_search_v13_released_workspace_identity_dom_blocked_external_runtime_return_to_01_receipt_20260828.json`。
+- 有限阻塞结论与停止条件已自动发送回原 01 任务
+  `01a02f3d-c2b7-72f0-8be7-58847f6f08a5`；01 不得自动续跑当前链。
+- 01 唯一下一步：停止当前 slot 1 链，不重复 DOM、恢复或接管，不把 id=2、身份、登录、
+  风险或搜索目标记为已验证，不搜索、导航、建标签、进入详情或恢复当日计数；等待一项
+  明确重开条件成立。
+
+### 42.1 01 已同步 v13 最终停止状态
+
+- 01 已核对第 42 节及其两份结构化回执，将 2026-08-28 slot 1 标记为
+  `blocked_external_runtime_search_v13_identity_dom_final`。没有追加 Browser、平台或账号动作，
+  当日浏览、深读、草稿、公开评论与关注计数仍均为 0。
+- 同一份 v13 结果不再自动转回 02 或重试。只有第 42 节列出的、可验证的重开条件先成立，
+  才能以新的明确授权和新的验真链重启；用户先前对项目内修复与安全重试的授权不包括绕过
+  这一外部运行时证据缺口。
+
+## 43. Browser 前台验收门与 IAB 保留
+
+- 用户明确要求继续优先使用 Codex 内置 Browser/IAB，不禁用内置浏览器；Chrome 和
+  Computer Use 仍不得替代小红书 UI。
+- 自动维修链的后台阶段只允许日志检查、程序修复和本地测试。需要真实 Browser 验收时，
+  02 返回 `AWAIT_FOREGROUND_BROWSER_ACCEPTANCE`，不得自动唤醒 01 发起 UI 调用；只有
+  01 已在前台或收到用户新一轮消息后，才能在原授权边界内做一项有界验收。
+- 控制内核重置或 tab 缺失、过期后，旧 tab 对象和 id 一律作废；保留 IAB 选择并从同一
+  binding 获取或创建新 tab。旧 v13 回执继续作为历史事故证据，不再授权复用旧 id。
+
+### 43.1 新前台验收的全新工作区导航无结果，已停止
+
+- 01 已在用户新一轮前台消息后重新开始 2026-08-28 验收。先确认 2026-08-24 Style Lab
+  没有存活进程，未继承其生成、草稿、额度或批准；也没有复用旧 tab/id、账号或 v13 现场
+  结论。
+- 同一 IAB binding 下新建任务标签 id=3；一次任务标签清单和一次精确空白标签重绑均成功。
+  对该新 id 唯一一次首页导航在 15 秒内没有 caller-visible 结果并重置控制内核；是否实际
+  到达页面未知，不能用旧标签、旧 URL 或旧身份推断成功。
+- 本次没有读取 DOM、搜索、详情、评论、回复、关注、发布、发送、登录或切号；账号、登录、
+  风险和唯一搜索目标均未核验，当日计数仍为 0。停止回执：
+  `daily_runs/2026-08-28/account_1_stop_receipt_foreground_fresh_workspace_navigation_timeout_20260828.json`。
+- 这是与 §41.1 不同的新前台验收导航故障；根据当前自动修复规则只转交 02 一次。等待其
+  有界评估或修复回执期间，01 不恢复、重试或继续该标签链。
+
+## 44. 全新 id=3 导航无结果复用既有一次性恢复合同
+
+- 02 已核对 §43.1、两份新事故回执和当前
+  `panse-xhs-iab-search-navigation.v13` 实现。此次故障不需要创建 v14：现有
+  `recoverXhsWorkspaceAfterIndeterminateNavigation` 已要求精确候选 id、`tab.goto`
+  只调用 1 次、结果缺失、导航尝试 1、重试 0；证明完整后只调用一次
+  `browser.tabs.list()`，且从不重放导航。
+- 控制重置后的旧 tab 对象继续作废。id=3 仅作为新鲜清单中的比较键，不因历史回执
+  自动恢复为当前身份；只有一次新鲜任务标签清单精确返回同一 id=3 且实际 URL 是可复用
+  小红书工作区时，才允许随后精确重绑并进入既有新鲜身份/登录/风险验真。
+- 为本次全新前台事故增加了专门回归，确认 id=3 路径只发 1 次清单 RPC、导航重放 0、
+  新建 0，并只接受精确 id。搜索 47、详情 14、轮播 7，共 **68 passed, 0 failed**；
+  6 个 JavaScript 语法检查与测试文件 `git diff --check` 通过。生产适配器代码未修改，
+  本地回归不是平台成功。
+- 当前状态为 `technical_repair_complete_awaiting_foreground_browser_acceptance`。依前台门，02
+  不得自动唤醒 01 或调用 Browser；唯一安全验收是 01 在前台或收到用户新一轮消息后，
+  用当前 IAB binding 和 §43.1 的有限导航证明只调用一次上述恢复函数。
+- 若唯一清单没有 caller-visible 结果，或 id=3 缺失、重复、仍为 `about:blank`、不是可复用
+  小红书 URL，本事故立即收口为 `blocked_external_runtime`：不得第二次恢复，不得进入
+  v13 释放标签清单/接管，不得导航、新建、读 DOM、搜索、详情或再次 01→02 循环。
+- 结构化技术回执：
+  `daily_runs/2026-08-28/in_app_search_foreground_fresh_navigation_recovery_assessment_receipt_20260828.json`。
+  本轮没有真实 Browser、平台、账号、登录、切号、评论、回复、关注、发布或发送动作，
+  也没有修改全局 Browser runtime/plugin。
+
+### 44.1 前台恢复清单明确 id=3 不可重绑，已最终停止
+
+- 01 在用户新一轮消息后按第 44 节只调用一次
+  `recoverXhsWorkspaceAfterIndeterminateNavigation`，其唯一 Browser RPC 为新鲜任务标签清单。
+  该调用明确返回 `blocked_external_runtime`、
+  `navigated_workspace_candidate_not_rebindable`，且 id=3 的
+  `exact_candidate_matches=0`。
+- 因此不能从先前无结果的导航推断平台页面、账号、登录、风险或搜索入口。01 没有执行第二次
+  恢复、释放标签清单/接管、导航、建标签、DOM 读取、搜索、详情或任何账号外部动作；当日计数
+  仍均为 0。停止回执：
+  `daily_runs/2026-08-28/account_1_stop_receipt_foreground_fresh_workspace_recovery_blocked_20260828.json`。
+- 这是第 44 节明确的终止分支，不得再自动转交 02 或循环修复。只有外部 Browser runtime 已验证
+  稳定且用户以后另行明确授权一条新的前台验收，才可从新的 IAB 工作区重新开始。
+
+## 45. 用户扩大授权后的 Codex IAB 导航运行时修复
+
+- 用户在当前 02 任务明确授权扩大到全局 Codex Browser/runtime 修复，并要求修复后继续
+  2026-08-28 日常工作。第 44 节以前的 v11-v13 只固化了结果丢失后的停止和恢复语义，
+  没有修复底层 caller-visible 结果丢失；本节不再创建新的项目合同版本。
+- 已在 Browser `26.820.80927` 安装服务层修复。代码核对确认原 `navigate_tab_url` 只给
+  页面事件等待设置超时，标签附着、文档状态、`Page.enable`、`Page.getFrameTree` 和
+  `Page.navigate` 没有共享硬截止。现已把同一 deadline 贯穿这些阶段，并在超时保留
+  debugger。原服务 SHA-256 为
+  `7fce35cdb871f2b22a7cd2bc69bb0581778a194d1c988a88a4bfd47aa40375b8`，最终为
+  `69d4976eff608dec964f3ff2a158d4369fa9fe78e38bd6ef1bd41d0f649bf1a1`，原文件已按哈希备份。
+- 本地永不开始响应的 HTTP 导航进一步证明：IAB 原生控制桥阻塞时，普通 JavaScript
+  计时器不能抢占它。因此另加一个严格受限的 IAB 启动兼容路径：只允许从
+  `about:blank` 调度到 HTTPS 的 `www.xiaohongshu.com/` 或 `/explore`，通过会先返回的
+  `Runtime.evaluate` 安排页面自身下一事件循环导航；搜索 URL、详情 URL、query、fragment、
+  非 HTTPS 和其他 host 均拒绝。调用返回只代表已调度，仍必须按同一新鲜 tab id 读回
+  实际 URL，不得推断平台成功。
+- 可重复、失败关闭的安装/核验脚本为
+  `scripts/repair_codex_browser_navigation_deadline.ps1` 与
+  `scripts/repair_codex_browser_iab_xhs_bootstrap.ps1`。服务语法检查、两个核验器和重复安装
+  幂等检查通过；本地非平台页面的“新建→导航→精确重绑→URL/title→可见 DOM RPC”在
+  367ms 内返回。搜索 47、详情 14、轮播 7，共 **68 passed, 0 failed**，6 个 JavaScript
+  语法检查通过。以上都不是小红书平台成功。
+- 状态为 `technical_repair_complete_awaiting_01_foreground_acceptance`。结构化修复回执：
+  `daily_runs/2026-08-28/codex_iab_navigation_runtime_repair_receipt_20260828.json`。
+- 自动回流给 01 的唯一安全链：丢弃已重置内核与旧 tab/id，从已修服务重新初始化同一
+  IAB family，新建一个空白任务标签，只导航一次精确小红书首页，再只读一次同 id 的当前
+  URL。仅当真实 URL 核验通过，才继续同页身份、登录、风险和唯一搜索目标验真，随后恢复
+  当日原计划；评论、回复、关注、发布和发送仍停在当前批动作批准门。
+
+### 45.1 修后服务的真实 IAB 首页导航仍无结果，已停止并转交 02
+
+- 01 严格按第 45 节丢弃旧控制内核、旧 tab/id 后重新初始化同一 IAB family，并新建全新
+  空白任务标签 id=4。对精确 `https://www.xiaohongshu.com/` 只导航一次；该调用在 15 秒内
+  仍没有 caller-visible 结果并重置控制内核。
+- 因为 `goto` 连返回“已调度”都未发生，01 没有尝试同 id URL 读回、重绑、DOM、身份、登录、
+  风险或搜索入口验真，也没有发生任何平台或账号动作；全部当日实际计数仍为 0。
+- 本次是安装后的真实验收失败，不能由 68 项本地回归或 localhost smoke 冒充通过。停止回执：
+  `daily_runs/2026-08-28/account_1_stop_receipt_post_runtime_repair_homepage_navigation_timeout_20260828.json`。
+  依据自动路由，01 对该新事故仅转交 02 一次；在其有界结论或修复回执前不得重试、恢复或
+  继续 id=4 链。
+
+## 46. §45.1 根因是旧 Browser 工作者未重载，已完成精确重载
+
+- §45.1 验收前后的进程证据显示：系统中 45 个 `node_repl.exe` Browser 工作者全部早于
+  §45 服务补丁安装时间 17:38:19 启动，最晚一个为 17:34:11；补丁安装后启动的工作者为 0。
+  因此 01 所谓“重置内核”只清空 JavaScript 会话，并未卸载工作进程中已缓存的旧
+  `browser-service.mjs`，id=4 实际没有执行 §45 的修后 handler。
+- 兼容分支又前移了一层：对允许的精确小红书首页目标，先用已经可靠返回的任务标签清单
+  核对同 id 当前确为 `about:blank`，再发首次 CDP 调度；不再为了判断空白页先做
+  `readDocumentState`/debugger attach。服务最终 SHA-256 为
+  `525919c1f88e4a90d334e10b722fab16ae7d97ea71687dabddffce9f0cc8ffca`。语法、补丁完整性和
+  重复安装幂等检查通过；68 项项目回归继续为 68 passed, 0 failed。
+- 已只对主 Codex PID 45792 派生、可执行路径精确匹配当前 CUA runtime 的 45 个旧
+  `node_repl.exe` 工作者执行重载：旧工作者剩余 0，主 Codex 仍存活，没有关闭任务、删除
+  标签或浏览数据。当前 02 内原 MCP transport 随旧工作者关闭，不能在同一 transport 内
+  冒充修后实时验收；下一次 Browser 工具使用必须由新工作者重新建立。
+- 状态为 `technical_repair_complete_requires_fresh_browser_worker`。结构化回执：
+  `daily_runs/2026-08-28/codex_iab_navigation_runtime_reload_repair_receipt_20260828.json`。
+- 非循环恢复链：01 开始一个新 turn，先证明新 Browser 工作者启动晚于 17:54:31 且服务
+  哈希匹配；再从新的 IAB binding、新空白标签和新 id 只做一次精确首页导航与一次同 id
+  URL 读回。通过后继续身份、登录、风险、搜索、深读和草稿准备；若真正的新工作者仍丢失
+  这一 caller 结果，则收口为 `blocked_native_iab_bridge`，不得再创建合同版本或重放导航。
+
+### 46.1 新 Browser worker 未能创建，native IAB transport 已关闭
+
+- 01 先核对服务 SHA-256 与第 46 节一致、现有 `node_repl.exe` worker 为 0；随后唯一一次
+  Browser 初始化和一次仅限控制通道的重连探针均在执行前返回 transport closed，之后 worker
+  仍为 0，不能证明任何新 worker 启动晚于 17:54:31。
+- 因而本轮没有 IAB binding、tab、新 id、goto、URL 读回或 DOM；也没有登录、账号、搜索、
+  详情、评论、回复、关注、发布或发送，当日计数仍为 0。停止回执：
+  `daily_runs/2026-08-28/account_1_stop_receipt_post_worker_reload_native_iab_transport_closed_20260828.json`。
+- 此处阻塞发生在 §46 前置的 native IAB 控制通道重建，不是“真正新 worker 的 goto 无结果”。
+  01 对该新、可复现故障仅自动转交 02 一次；在其有界结论前不得重试 Browser 初始化或任何
+  平台动作。
+
+### 46.2 native IAB transport 已由主 Codex 自动重建
+
+- §46.1 的 `transport closed` 发生在精确卸载旧 worker 后的重建窗口。主 Codex PID 45792
+  随后于 17:59:35 自动创建 45 个新的 `node_repl.exe` worker；最早和最晚启动时间均晚于
+  §46 规定的 17:54:31 截止点，现有 worker 已不再缓存补丁前服务。
+- 当前安装的 `browser-service.mjs` SHA-256 仍精确为
+  `525919c1f88e4a90d334e10b722fab16ae7d97ea71687dabddffce9f0cc8ffca`；一次只限
+  `node_repl` 的控制通道探针已正常返回。没有再修改全局 runtime/plugin，也没有创建 IAB
+  binding、标签或执行平台导航、账号动作。
+- 状态更新为 `recovered_ready_for_single_live_acceptance`。结构化回执：
+  `daily_runs/2026-08-28/codex_iab_native_transport_recovery_receipt_20260828.json`。
+- 自动回流 01 的唯一下一步：在此新 transport 上创建一个新 IAB binding 和一个全新
+  `about:blank` 任务标签，只做一次精确首页导航及一次同 id URL 读回。两者返回后恢复日期、
+  身份、登录、风险、唯一搜索目标等正常门禁并继续当天工作；若 caller-visible 结果再次丢失，
+  只收口一次 `blocked_native_iab_bridge`，不再循环新增修复合同。
+
+### 46.3 真正新 worker 的首页 goto 仍无 caller-visible 结果，最终收口
+
+- 01 已核对所有 worker 启动均晚于 17:54:31、服务 SHA-256 与 §46.2 一致，并成功建立新的
+  IAB binding 与新空白标签 id=5。对精确小红书首页的唯一一次 `goto` 仍在 15 秒内没有
+  caller-visible 结果并重置控制内核。
+- 因该结果已发生在真正重载后的 worker、补丁哈希匹配且控制通道已验证可用的条件下，满足
+  §46.2 的 `blocked_native_iab_bridge` 终止条件。没有同 id URL 读回、重播导航、新建标签、
+  DOM/账号/风险/搜索读取或任何平台、账号动作；当日计数全部为 0。停止回执：
+  `daily_runs/2026-08-28/account_1_stop_receipt_post_fresh_worker_homepage_navigation_native_bridge_blocked_20260828.json`。
+- 本事故不再转交 02、不创建新合同版本，也不得用后续局部测试替代真实 caller-visible 结果。
+  只有出现材料性的新外部运行时事实，并由用户以后明确授权新的前台验收，才可重开。
+
+## 47. 首页导航回执竞态 v3 与 Codex 后台精确重建
+
+- §46.3 提供了材料性新事实：真正新 worker 已运行补丁，但兼容分支仍以
+  `setTimeout(..., 0)` 调度 `window.location.assign`。该零延迟会让页面跳转销毁执行上下文与
+  `Runtime.evaluate` 回执送达发生竞态；外层 Promise/timer 无法补救已阻塞的 native bridge。
+- 全局 Browser service 的精确小红书首页兼容分支已改为 1000ms 后调度页面跳转，给 CDP
+  回执先返回调用方的确定窗口。仅允许 HTTPS `www.xiaohongshu.com/` 或 `/explore`，无 query、
+  无 fragment；搜索/详情 URL、其他主机和非 HTTPS 仍走原门禁。新服务 SHA-256 为
+  `a138896fd38968a5d305ee3ccbc724d8867bea525f1f22f824ad4b11d8d8fba5`。
+- 补丁安装/校验幂等，服务语法通过；搜索、详情和轮播合计 68 passed, 0 failed。这仍只是技术
+  回归，不是平台成功。43 个仍存活的旧 worker 已精确卸载，主 Codex 未关闭；应用在有界
+  冷却内未自动创建新 worker，因此下一步只精确重启主 Codex 的 `app-server` 子进程以重建
+  Browser transport，不关闭桌面窗口、不删除标签或浏览数据。
+- 后台重建运行回执固定写入
+  `daily_runs/2026-08-28/codex_iab_v3_backend_restart_receipt_20260828.json`。只有其状态为
+  `recovered_ready_for_control_probe`，01 才可先做一次控制通道探针，再做一次全新空白标签的
+  首页导航和同 id URL 读回；失败则停止，不重复导航。
+
+### 47.1 v3 后台与 Browser transport 已重建完成
+
+- 精确重启脚本已验证旧 Codex app-server 退出、v3 服务哈希匹配并成功拉起新 worker；运行回执
+  状态为 `recovered_ready_for_control_probe`。桌面应用随后完成自身后台重建，当前 Codex PID
+  123392 启动于 18:23:12，现有 8 个 Browser worker 均在 18:23:25 之后启动。
+- 当前服务 SHA-256 仍为
+  `a138896fd38968a5d305ee3ccbc724d8867bea525f1f22f824ad4b11d8d8fba5`，一次纯控制
+  通道探针已于 18:25:49 正常返回。状态为 `ready_for_single_live_acceptance`；结构化回执：
+  `daily_runs/2026-08-28/codex_iab_v3_transport_ready_receipt_20260828.json`。
+- 01 仅执行一次全新 IAB binding / `about:blank` 标签的首页 `goto`；收到 caller-visible 返回后
+  至少等待 1500ms，再对同 id 读回一次 URL。只有读回为小红书首页或 `/explore` 才继续日期、
+  身份、登录、风险、搜索、深读和草稿门禁；02 不执行任何平台或账号动作。
+
+## 48. 2026-08-29 独立日计划与首个前台验收停止
+
+- 01 已按新日期建立独立计划：slot 1 为成熟养号第 15 天，计划 20 篇深读、最多 15 条待审草稿；
+  新日不继承 2026-08-28 的标签、账号验真、额度、草稿或发送批准，所有实际计数从 0 开始。
+- 在已收到用户当日前台指令后，01 用当前 Codex 内置 Browser 新建一次任务标签，并对精确小红书首页
+  只调用一次导航。该调用在 20 秒有界等待内没有 caller-visible 返回且浏览器控制内核重置；没有同 id
+  URL 读回、DOM、账号/登录/风险验真、搜索、详情、评论、回复、关注、发布、发送、登录或切号。
+- 由于页面是否实际到达不能确定，今日平台计数仍为浏览 0、深读 0、草稿 0、公开评论 0、关注尝试 0。
+  停止证据：`daily_runs/2026-08-29/account_1_stop_receipt_fresh_daily_iab_homepage_navigation_timeout_20260829.json`。
+- 自动维修路由的首次检查是在程序仓库目录而不是本任务登记目录启动，故错误返回
+  `cwd_conflicts_with_registry`。经用户授权核对，中央登记本身正确：01 与 02 都精确登记在
+  `D:\AI\小红书运营中心`。使用该正确 cwd 与当前 thread/project id 的重检已匹配，并精确定位到
+  `02｜小红书审核与程序维护`。本次有限转交单：
+  `daily_runs/2026-08-29/account_1_to_02_iab_homepage_navigation_timeout_handoff_20260829.json`。
+- 01 仍不重试、接管未知标签、读 DOM、搜索或继续同一事故链；等待 02 的有限修复结论或回执。今日 slot 1
+  的平台研究和深读保持停止；评论、回复、关注、发布、发送、登录和切号也仍未获授权。
+
+## 49. Browser 26.825.32147 升级兼容修复已完成，等待 01 单次前台验收
+
+- 第 48 节故障的项目外运行时根因已定位：当前实际安装的 Browser 已由前次修复使用的
+  `26.820.80927` 更新为 `26.825.32147`，缓存目录中只剩新版；新版
+  `browser-service.mjs` 的初始 SHA-256 为
+  `f43ed0108b81ee911395539c121f34f6b60bba28fc402827e6adee3303accbdb`，不含前次导航截止或
+  小红书首页非阻塞启动标记。因此 2026-08-29 的真实调用运行的是升级后未适配服务，不是 01
+  重复操作或平台页面已经被证实异常。
+- 已把导航总截止与精确 IAB 小红书根页兼容路径适配到当前新版服务。标签附着、文档状态、
+  `Page.enable`、`Page.getFrameTree` 与 `Page.navigate` 共享同一截止；仅当当前后端为 IAB、同一
+  精确标签确为 `about:blank`，且目标是无 query、无 fragment 的 HTTPS
+  `www.xiaohongshu.com/` 或 `/explore` 时，才先返回 `Runtime.evaluate` 回执并延迟 1000ms
+  调度页面自身导航。搜索、详情、其他主机、非 HTTPS、任意选择和坐标路径均未放开。
+- 两个安装/核验脚本已改为精确识别当前唯一 Browser 版本，并同时兼容旧、新服务的压缩变量形态；
+  原服务和中间服务均按版本与哈希备份。最终服务 SHA-256 为
+  `fc045f69ddb5c4c2b1118172ff9ddd6cb528a6dd22a37f7c923e379b56013cc1`。PowerShell 解析、
+  两个补丁核验、重复安装幂等、`node --check` 均通过；搜索、详情和轮播合计
+  **68 passed, 0 failed**。这些只证明技术回归，不是小红书平台成功。
+- 已精确卸载主 Codex PID 148900 派生、路径一致的 21 个旧 `node_repl.exe` 工作者，并只重建
+  其 `app-server` 后台；桌面窗口、标签和浏览数据未删除。新 Codex PID 186144 已启动，最终核对
+  有 19 个修复后新工作者，最早启动于 08:34:26，服务哈希仍匹配。本轮 02 没有创建 Browser
+  binding/标签，没有导航、读取未知页面、登录、切号、评论、回复、关注、发布或发送，今日计数不变。
+- 状态为 `technical_repair_complete_awaiting_01_foreground_acceptance`。结构化修复回执：
+  `daily_runs/2026-08-29/codex_iab_26_825_navigation_upgrade_repair_receipt_20260829.json`。
+- 自动回流 01 的唯一安全步骤：用户让 01 在前台继续后，新建一个 IAB binding 和一个全新
+  `about:blank` 任务标签，只对精确 `https://www.xiaohongshu.com/` 导航一次；必须先收到
+  caller-visible 返回，至少等待 1500ms，再只读一次同 id URL。只有 URL 精确证明首页或
+  `/explore`，才继续日期、身份、登录、风险和唯一搜索目标门禁。任一 RPC 再次无结果即一次性
+  收口为 `blocked_native_iab_bridge`，不重试导航、不进入第二轮修复循环，也不把本地测试写成平台成功。
+
+### 49.1 修后唯一前台验收没有返回可核验导航结果，最终停止
+
+- 01 已在前台按第 49 节新建 IAB binding 和全新空白任务标签，并只对精确小红书首页调用一次导航。
+  此次调用没有给出 caller-visible 导航结果，反而返回一个未提供的站点授权对象需求；没有同 id URL
+  读回、DOM、日期/账号/登录/风险/唯一搜索目标核验、搜索、详情或任何平台与账号动作。
+- 该结果不能证明页面到达，也不能推断身份、登录、风险或搜索入口。今日 slot 1 计数仍为浏览 0、
+  深读 0、草稿 0、公开评论 0、关注尝试 0。停止回执：
+  `daily_runs/2026-08-29/account_1_stop_receipt_post_26_825_repair_origin_authorization_blocked_20260829.json`。
+- 依第 49 节的一次性验收边界，本事故收口为 `blocked_native_iab_bridge`：不重复导航、不新建标签、
+  不读取未知页或 DOM、不搜索、不进入详情，也不再进入新的自动修复循环。评论、回复、关注、发布、
+  发送、登录和切号均未执行且仍须各自当前批准。
+
+## 50. Browser Reliability Gateway 已记录同类扩展层失败并转交 02
+
+- 当前前台任务已按 Browser Reliability Gateway 的正式流程核对插件版本、精确任务身份和只读 IAB
+  导航范围。浏览器版本 `26.825.32147` 受当前策略支持，修后服务哈希仍与第 49 节回执一致。
+- 新建的受控事故先记录一次导航前拒绝，再仅执行一次控制代际推进并准备新的 IAB 只读导航；两次都在
+  平台动作前因缺失的 Browser Use 站点授权对象被扩展层拒绝。没有页面 URL、DOM、搜索、账号、登录、
+  风险或任何外部效果，浏览/深读/草稿/评论/关注计数仍为 0。
+- 网关把失败分类为 `BR-EXTENSION`，已用尽该事故唯一 `local_recovery_once`，并原子保留
+  `dispatch_repair_once`。有限转交单：
+  `daily_runs/2026-08-29/account_1_to_02_browser_reliability_extension_handoff_20260829.json`；其后
+  01 不再创建绑定或标签、重放导航、读取未知页、搜索或执行账号动作，等待 02 的结构化修复结论。
+
+## 51. 缺失项是 Browser 主机的站点授权通道，项目内无安全修复路径
+
+- 02 已核对项目适配器、Browser `26.825.32147` 的公开 API、客户端命令结构以及当前与原始服务。
+  项目适配器已正确调用 `tab.goto(XHS_HOME_URL)`；公开合同为
+  `goto(url: string): Promise<void>`，客户端只发送 `browser_id`、`tab_id` 和 `url`，不存在可由
+  项目补传的“站点授权对象”参数。
+- Browser Use 在导航 handler 前执行 `browser-origin-access` 安全检查。没有已持久批准时，必须由
+  Codex/Browser 主机提供 `createElicitation` 授权通道，形成针对精确 origin 的
+  `access_browser_origin` 请求。本事故两次都在这里于 dispatch 前失败，且外部效果为 `none`；这不
+  等于用户拒绝，也不能推断平台、登录、账号风险或页面状态。
+- 原版服务备份和当前修后服务都包含同一授权门，证明它不是第 49 节小红书导航兼容补丁新增的；该
+  补丁位于安全检查之后，无法生成或替代主机授权对象。给 `goto` 发明第二参数、伪造批准、修改
+  OpenAI 插件缓存或放宽权限都会绕过正式安全合同，不能作为项目本地修复。
+- 相称回归通过：项目搜索/详情/轮播共 **68 passed, 0 failed**；Browser Reliability policy 与
+  integration 共 **36 passed, 0 failed**。这些只证明代码和停止语义，没有执行 Browser、页面或
+  平台验收。
+- 状态收口为 `blocked_external_runtime`。结构化回执：
+  `daily_runs/2026-08-29/browser_reliability_origin_authorization_blocked_external_runtime_receipt_20260829.json`；
+  有限阻塞结论已送达原 01，返回单：
+  `daily_runs/2026-08-29/browser_reliability_origin_authorization_blocked_return_to_01_receipt_20260829.json`。
+- 唯一安全恢复条件：本事故不得重试。只有 Codex/Browser 主机恢复标准站点访问授权通道，并由用户
+  在前台对 `https://www.xiaohongshu.com` 作出所需明确批准，或官方主机/runtime 更新经独立核验已
+  修复该通道后，01 才能丢弃全部旧 binding/tab/id，以新的可靠性事故和代际只做一次受控验收。
+  条件满足前，slot 1 不自动续跑，也不再循环转交 02。

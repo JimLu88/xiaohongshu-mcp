@@ -22,6 +22,12 @@
   和当前批批准后，从安全断点继续真实平台终验或原先范围内工作。若结果为
   `blocked_external_runtime`、`failed`、`degraded` 或未完成，不得自动续跑原任务。
   自动路由不传递平台业务权限，也不自动转交 99 或塔奇克马控制面。
+- 上一条的自动续接不适用于 Browser/Chrome/Computer Use 的真实 UI 调用。02 位于后台时
+  只能查日志、改程序和跑本地测试；需要真实浏览器验收时返回
+  `AWAIT_FOREGROUND_BROWSER_ACCEPTANCE`，不得自动唤醒 01 调 Browser。只有 01 已由用户
+  打开到前台或收到用户新一轮消息后，才可在原授权边界内执行一项有界 Browser 验收。
+  内置 Browser/IAB 仍是首选和唯一小红书 UI 表面；控制内核重置或 tab 缺失/过期时，
+  丢弃旧 tab 对象及 id，从同一 IAB binding 获取或创建新 tab，禁止复用旧 id 或改用 Chrome。
 - 02 的修复回归是技术验证，不是独立终审；安全策略、生产权限、凭证、外部发布
   或难恢复变更仍须系统级独立只读审核和用户批准。
 - 项目入口说明见 `D:\AI\小红书运营中心\00-从这里开始.md`。
@@ -90,21 +96,42 @@
   点击、盲目重复或把调用返回当成媒体已切换；返回 `blocked` 时保存停止证据。
 - 建立搜索工作页统一调用 `scripts/xhs_in_app_search_navigation.mjs`：先用
   `acquireXhsSearchWorkspace(browser)` 复用当前内置浏览器绑定；空标签列表只
-  表示标签已清理，不等于浏览器绑定失效。合同 `panse-xhs-iab-search-navigation.v10`
-  不要求调用方额外传入可漏传的验证布尔量；它先核对文档化 IAB 任务标签能力，
-  并以同一 binding 的 `browser.tabs.list()` 成功读回作为零动作可用性证据，再用
-  `browser.user.openTabs()` 精确查找仍可见的小红书首页/搜索页，并最多调用
-  1 次 `claimTab` 接管后零动作验真；没有唯一可验页面时，才允许最多新建 1 个任务
-  标签并且只进入小红书首页。`/explore` 与 `/` 都视为可复用首页工作区；无关的
-  `about:blank` 标签不能让程序忽略唯一 `/explore` 标签并重复新建。acquire 的正式
-  控制调用链共享 12 秒结果截止，覆盖任务标签读取/重绑/验真、可见标签读取/接管、
-  `tabs.new` 和首页导航；`Tab.goto` 在其中最多等待 8 秒。`tabs.new` 截止时返回
-  结构化“新建尝试 1、完成数未知、导航 0”，禁止继续下一动作；`goto` 超过软截止返回
-  结构化 `homepage_navigation_indeterminate_before_acquire_deadline`，记录已建标签 1、
-  已尝试导航 1 并停止，不等待外层 30 秒重置，也不在同一终验里再次 acquire。
-  当前 Browser 控制 RPC 已证明不能由普通本地 timer 可靠抢占，因此既有工作区路径
-  必须分三次只读控制调用：`acquireXhsSearchWorkspace(iab)` 只列出并返回唯一精确
-  候选；`rebindXhsSearchWorkspaceCandidate(iab, { candidate })` 只重绑该 id；随后
+  表示标签已清理，不等于浏览器绑定失效。合同 `panse-xhs-iab-search-navigation.v13`
+  的历史回执继续用于解释已有事故，但新的真实 Browser 验收必须先满足第 0 节前台门；
+  stale/missing/closed tab 或控制内核重置后不得复用旧对象和旧 id，而应保留 IAB 选择，
+  从同一 binding 重新获取或创建当前任务的新 tab。合同其余身份、风险和动作门禁不变；
+  其 v13 实现适配 Browser `26.820.80927` 的 caller-visible 结果边界：所有工作区阶段每次最多
+  只发 1 个文档化 Browser RPC，普通本地 timer 不再被写成能抢占控制 RPC 的保证。
+  第一段 `acquireXhsSearchWorkspace(iab)` 永远只调用一次 `browser.tabs.list()`：优先
+  返回唯一 `/`、`/explore` 或搜索页候选；否则返回唯一精确 `about:blank` 候选，或
+  返回需要继续核对可见用户标签的结构化状态。第一段不得调用 `openTabs`、`claimTab`、
+  `tabs.new`、`goto` 或 DOM。无关的 `about:blank` 标签不能让程序忽略唯一
+  `/explore` 标签，也不能触发重复新建。
+  空工作区后续也必须显式分段：`inspectXhsVisibleWorkspaceCandidates` 只列出可见标签；
+  有且仅有 1 个精确小红书候选时，`claimXhsVisibleWorkspaceCandidate` 只接管该候选；
+  已有唯一空白任务标签时，`rebindXhsBlankWorkspaceCandidate` 只重绑该 id；只有任务
+  与可见工作区都已证明不存在、且传入当前结构化缺席证明时，
+  `createXhsSearchWorkspaceBlankCandidate` 才可新建
+  1 个空白任务标签；`navigateXhsBlankWorkspaceCandidate` 只对该精确空白候选导航
+  1 次；随后 `inspectXhsWorkspaceAfterNavigation` 只列出任务标签并核对同一 id 的实际
+  URL，禁止从 `goto` 返回或计划 URL 推断成功。`goto` 无 caller-visible 结果时先停止
+  当前调用并保存“精确 id、只调用 1 次、结果缺失、导航尝试 1、重试 0”的有限证明；
+  控制恢复后只允许调用一次
+  `recoverXhsWorkspaceAfterIndeterminateNavigation(browser, { navigationAttempt })`。该函数
+  必须先核对上述证明，再只调用一次 `browser.tabs.list()`，只接受同一 id 当前实际为
+  小红书 URL；仍是 `about:blank`、候选不精确或清单无结果都停止，禁止第二次导航、
+  第二次同 id 恢复、新建、DOM 或搜索动作。若该唯一恢复已明确返回
+  `navigated_workspace_candidate_not_rebindable` 且 `exact_candidate_matches=0`，v13 允许
+  用该完整有限结果作为前置证明，只调用一次
+  `recoverXhsReleasedWorkspaceAfterTaskCandidateLoss(browser, { lossProof })`。它只读取一次
+  `browser.user.openTabs()`；0 个、2 个以上或清单无结果都停止，只有 1 个精确小红书
+  首页/搜索页候选才返回完整当前 claim handle，且不得声称它与丢失任务 id 连续。
+  随后 `claimXhsReleasedWorkspaceCandidate(browser, { discovery })` 只允许接管这一个完整
+  候选 1 次，并把 Browser 返回的新任务 id 作为唯一当前 id；旧 id 永不复用。接管后
+  仍须用一次新鲜可见 DOM 重新证明当前账号、登录、风险和唯一搜索目标，不能继承旧
+  页面或身份结论。任一阶段无结果同样停在该已知 RPC，不重放、不任意接管、不推断成功。
+  已有可复用工作区仍分三次只读控制调用：`acquireXhsSearchWorkspace(iab)` 只列出并
+  返回唯一精确候选；`rebindXhsSearchWorkspaceCandidate(iab, { candidate })` 只重绑该 id；随后
   `verifyXhsSearchWorkspaceCandidate(tab, { candidate, requiredProfileId })` 只执行一次文档化
   `tab.dom_cua.get_visible_dom()` 只读 RPC，不再调用已在真实终验中无结果的
   `tab.playwright.evaluate`，也不得为同页身份核验追加第二次 DOM RPC。第三段必须从

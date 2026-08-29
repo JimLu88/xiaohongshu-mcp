@@ -7,9 +7,18 @@ import test from "node:test";
 import {
   XHS_SEARCH_NAVIGATION_CONTRACT,
   acquireXhsSearchWorkspace,
+  claimXhsReleasedWorkspaceCandidate,
+  claimXhsVisibleWorkspaceCandidate,
+  createXhsSearchWorkspaceBlankCandidate,
   inspectXhsSearchInputSurface,
+  inspectXhsVisibleWorkspaceCandidates,
+  inspectXhsWorkspaceAfterNavigation,
+  navigateXhsBlankWorkspaceCandidate,
   openXhsSearchResults,
+  rebindXhsBlankWorkspaceCandidate,
   rebindXhsSearchWorkspaceCandidate,
+  recoverXhsWorkspaceAfterIndeterminateNavigation,
+  recoverXhsReleasedWorkspaceAfterTaskCandidateLoss,
   recoverXhsSearchPage,
   verifyXhsSearchWorkspaceCandidate,
   verifyXhsSearchPage,
@@ -17,6 +26,23 @@ import {
 
 const QUERY = "实木家具 开裂 修复 保养";
 const PROFILE_ID = "6465fa8000000000290160bd";
+const INDETERMINATE_NAVIGATION_ATTEMPT = Object.freeze({
+  browser_rpc: "tab.goto",
+  called_exactly_once: true,
+  result_received: false,
+  workspace_candidate_id: "1",
+  homepage_navigations_attempted: 1,
+  retry_performed: false,
+});
+const TASK_CANDIDATE_LOSS_PROOF = Object.freeze({
+  status: "blocked_external_runtime",
+  reason: "navigated_workspace_candidate_not_rebindable",
+  workspace_candidate_id: "1",
+  exact_candidate_matches: 0,
+  recovery_rpcs_attempted: 1,
+  navigation_replayed: false,
+  additional_browser_actions_after_recovery: 0,
+});
 const SAFE_SEARCH = Object.freeze({
   query: QUERY,
   settleMs: 100,
@@ -59,7 +85,10 @@ function fakeEnvironment({
     id: "task-tab-1",
     async goto(url) {
       calls.push(["goto", url]);
-      if (goto === "home" || goto === "home_timeout") state = "home";
+      if (goto === "home" || goto === "home_timeout") {
+        state = "home";
+        tabs = [{ id: tab.id, url }];
+      }
       if (goto === "pending") return new Promise(() => {});
       if (goto === "reset") tabs = [];
       if (goto === "home_timeout") throw new Error("Timeout during Page.navigate");
@@ -256,9 +285,40 @@ function fakeEnvironment({
 
 test("contract treats an empty tab list as recoverable and remains IAB-only", () => {
   assert.equal(XHS_SEARCH_NAVIGATION_CONTRACT.empty_tab_list_invalidates_browser_binding, false);
-  assert.equal(XHS_SEARCH_NAVIGATION_CONTRACT.maximum_new_tabs_per_acquire_call, 1);
+  assert.equal(XHS_SEARCH_NAVIGATION_CONTRACT.maximum_control_rpcs_per_workspace_stage, 1);
+  assert.equal(XHS_SEARCH_NAVIGATION_CONTRACT.empty_workspace_staged_bootstrap, true);
+  assert.equal(XHS_SEARCH_NAVIGATION_CONTRACT.maximum_new_tabs_per_acquire_call, 0);
+  assert.equal(XHS_SEARCH_NAVIGATION_CONTRACT.maximum_user_tab_claims_per_acquire_call, 0);
+  assert.equal(XHS_SEARCH_NAVIGATION_CONTRACT.maximum_homepage_navigations_per_acquire_call, 0);
+  assert.equal(XHS_SEARCH_NAVIGATION_CONTRACT.maximum_new_tabs_per_bootstrap_create_stage, 1);
+  assert.equal(
+    XHS_SEARCH_NAVIGATION_CONTRACT.maximum_homepage_navigations_per_bootstrap_navigation_stage,
+    1,
+  );
+  assert.equal(
+    XHS_SEARCH_NAVIGATION_CONTRACT.bootstrap_creation_requires_visible_absence_proof,
+    true,
+  );
+  assert.equal(
+    XHS_SEARCH_NAVIGATION_CONTRACT.indeterminate_navigation_zero_action_recovery,
+    true,
+  );
+  assert.equal(
+    XHS_SEARCH_NAVIGATION_CONTRACT.maximum_post_indeterminate_navigation_recovery_rpcs,
+    1,
+  );
+  assert.equal(
+    XHS_SEARCH_NAVIGATION_CONTRACT.navigation_replay_after_indeterminate_result_allowed,
+    false,
+  );
+  assert.equal(
+    XHS_SEARCH_NAVIGATION_CONTRACT.released_workspace_recovery_after_task_candidate_loss,
+    true,
+  );
+  assert.equal(XHS_SEARCH_NAVIGATION_CONTRACT.maximum_released_workspace_list_rpcs, 1);
+  assert.equal(XHS_SEARCH_NAVIGATION_CONTRACT.maximum_released_workspace_claim_rpcs, 1);
+  assert.equal(XHS_SEARCH_NAVIGATION_CONTRACT.lost_task_id_reused_as_current_id, false);
   assert.equal(XHS_SEARCH_NAVIGATION_CONTRACT.maximum_user_tab_claims_per_recovery, 1);
-  assert.equal(XHS_SEARCH_NAVIGATION_CONTRACT.maximum_homepage_navigations_per_acquire_call, 1);
   assert.equal(XHS_SEARCH_NAVIGATION_CONTRACT.homepage_navigation_soft_deadline_ms, 8_000);
   assert.equal(XHS_SEARCH_NAVIGATION_CONTRACT.acquire_result_soft_deadline_ms, 12_000);
   assert.equal(XHS_SEARCH_NAVIGATION_CONTRACT.existing_workspace_staged_verification, true);
@@ -294,26 +354,22 @@ test("contract treats an empty tab list as recoverable and remains IAB-only", ()
 test("documented IAB binding is verified by a successful zero-action tab list", async () => {
   const env = fakeEnvironment();
   const result = await acquireXhsSearchWorkspace(env.browser);
-  assert.equal(result.status, "workspace_ready");
+  assert.equal(result.status, "workspace_bootstrap_discovery_required");
   assert.equal(result.browser_binding_verified, true);
   assert.equal(
     result.browser_binding_verification_method,
     "documented_iab_capability_surface_plus_successful_task_tab_list",
   );
-  assert.equal(env.calls.filter((call) => call[0] === "list").length >= 1, true);
-  assert.equal(env.calls.filter((call) => call[0] === "new").length, 1);
-  assert.equal(env.calls.filter((call) => call[0] === "goto").length, 1);
+  assert.equal(env.calls.filter((call) => call[0] === "list").length, 1);
+  assert.equal(env.calls.filter((call) => call[0] === "openTabs").length, 0);
+  assert.equal(env.calls.filter((call) => call[0] === "new").length, 0);
+  assert.equal(env.calls.filter((call) => call[0] === "goto").length, 0);
 });
 
 test("missing documented task-tab capabilities is rejected before any acquire action", async () => {
   let listCalled = false;
   const incompleteBinding = {
-    tabs: {
-      async list() {
-        listCalled = true;
-        return [];
-      },
-    },
+    tabs: {},
   };
   await assert.rejects(
     acquireXhsSearchWorkspace(incompleteBinding),
@@ -322,16 +378,42 @@ test("missing documented task-tab capabilities is rejected before any acquire ac
   assert.equal(listCalled, false);
 });
 
-test("empty tab list creates one task tab and loads homepage only", async () => {
+test("empty workspace bootstrap uses one Browser RPC per explicit stage", async () => {
   const env = fakeEnvironment();
-  const result = await acquireXhsSearchWorkspace(env.browser);
-  assert.equal(result.status, "workspace_ready");
-  assert.equal(result.method, "create_one_tab_then_homepage");
-  assert.equal(result.new_tabs_created, 1);
-  assert.equal(result.homepage_navigations_attempted, 1);
+  const acquire = await acquireXhsSearchWorkspace(env.browser);
+  assert.equal(acquire.status, "workspace_bootstrap_discovery_required");
+  const visible = await inspectXhsVisibleWorkspaceCandidates(env.browser);
+  assert.equal(visible.status, "workspace_creation_required");
+  const created = await createXhsSearchWorkspaceBlankCandidate(env.browser, {
+    discovery: visible,
+  });
+  assert.equal(created.status, "blank_workspace_candidate_created");
+  const navigated = await navigateXhsBlankWorkspaceCandidate(created.tab, {
+    candidate: created.workspace_candidate,
+  });
+  assert.equal(navigated.status, "homepage_navigation_completed");
+  const listed = await inspectXhsWorkspaceAfterNavigation(env.browser, {
+    candidateId: created.workspace_candidate.id,
+  });
+  assert.equal(listed.status, "workspace_candidate_ready");
+  assert.equal(env.calls.filter((call) => call[0] === "list").length, 2);
+  assert.equal(env.calls.filter((call) => call[0] === "openTabs").length, 1);
+  assert.equal(env.calls.filter((call) => call[0] === "new").length, 1);
   assert.deepEqual(env.calls.filter((call) => call[0] === "goto"), [
     ["goto", "https://www.xiaohongshu.com/"],
   ]);
+});
+
+test("blank task creation is blocked without current visible-workspace absence proof", async () => {
+  const env = fakeEnvironment();
+  const result = await createXhsSearchWorkspaceBlankCandidate(env.browser);
+  assert.equal(result.status, "blocked");
+  assert.equal(
+    result.reason,
+    "visible_workspace_absence_proof_required_before_tab_creation",
+  );
+  assert.equal(result.new_tab_creation_attempts, 0);
+  assert.equal(env.calls.some((call) => call[0] === "new"), false);
 });
 
 test("two visually visible responsive inputs pass only when one is operable", async () => {
@@ -341,11 +423,26 @@ test("two visually visible responsive inputs pass only when one is operable", as
     operableSearchInputCount: 1,
     operableSearchInputIndex: 1,
   });
-  const result = await acquireXhsSearchWorkspace(env.browser);
+  const visible = await inspectXhsVisibleWorkspaceCandidates(env.browser);
+  const created = await createXhsSearchWorkspaceBlankCandidate(env.browser, {
+    discovery: visible,
+  });
+  await navigateXhsBlankWorkspaceCandidate(created.tab, {
+    candidate: created.workspace_candidate,
+  });
+  const listed = await inspectXhsWorkspaceAfterNavigation(env.browser, {
+    candidateId: created.workspace_candidate.id,
+  });
+  const rebound = await rebindXhsSearchWorkspaceCandidate(env.browser, {
+    candidate: listed.workspace_candidate,
+  });
+  const result = await verifyXhsSearchWorkspaceCandidate(rebound.tab, {
+    candidate: rebound.workspace_candidate,
+    requiredProfileId: PROFILE_ID,
+  });
   assert.equal(result.status, "workspace_ready");
-  assert.equal(result.workspace_state.visible_search_input_count, 2);
+  assert.equal(result.workspace_state.visible_dom_search_input_count, 1);
   assert.equal(result.workspace_state.operable_search_input_count, 1);
-  assert.equal(result.workspace_state.operable_search_input.dom_index, 1);
 });
 
 test("existing workspace acquire returns an exact staged candidate after task list only", async () => {
@@ -625,9 +722,15 @@ test("released visible homepage tab is claimed before creating a duplicate", asy
       },
     ],
   });
-  const result = await acquireXhsSearchWorkspace(env.browser);
-  assert.equal(result.status, "workspace_ready");
-  assert.equal(result.method, "claim_existing_visible_user_workspace_tab");
+  const acquire = await acquireXhsSearchWorkspace(env.browser);
+  assert.equal(acquire.status, "workspace_bootstrap_discovery_required");
+  const visible = await inspectXhsVisibleWorkspaceCandidates(env.browser);
+  assert.equal(visible.status, "visible_workspace_candidate_ready");
+  const result = await claimXhsVisibleWorkspaceCandidate(env.browser, {
+    candidate: visible.visible_workspace_candidate,
+  });
+  assert.equal(result.status, "workspace_tab_claimed");
+  assert.equal(result.method, "claim_exact_visible_user_workspace_candidate");
   assert.equal(result.user_tab_claims_attempted, 1);
   assert.equal(result.new_tabs_created, 0);
   assert.equal(env.calls.filter((call) => call[0] === "claimTab").length, 1);
@@ -642,7 +745,9 @@ test("multiple visible workspace candidates fail closed before claim or creation
       { id: "home-2", title: "小红书 2", url: "https://www.xiaohongshu.com/" },
     ],
   });
-  const result = await acquireXhsSearchWorkspace(env.browser);
+  const acquire = await acquireXhsSearchWorkspace(env.browser);
+  assert.equal(acquire.status, "workspace_bootstrap_discovery_required");
+  const result = await inspectXhsVisibleWorkspaceCandidates(env.browser);
   assert.equal(result.status, "blocked");
   assert.equal(result.reason, "visible_user_workspace_tab_not_unique");
   assert.equal(result.user_workspace_candidates_found, 2);
@@ -650,87 +755,244 @@ test("multiple visible workspace candidates fail closed before claim or creation
   assert.equal(env.calls.some((call) => call[0] === "new"), false);
 });
 
-test("homepage timeout is accepted only when the created tab proves workspace state", async () => {
+test("homepage navigation error is fail-closed and never triggers verification or retry", async () => {
   const env = fakeEnvironment({ goto: "home_timeout" });
-  const result = await acquireXhsSearchWorkspace(env.browser);
-  assert.equal(result.status, "workspace_ready");
-  assert.equal(result.homepage_navigation_result, "timeout");
-  assert.equal(result.workspace_state.workspace_verified, true);
-  assert.equal(env.calls.filter((call) => call[0] === "goto").length, 1);
-});
-
-test("pending homepage navigation returns structured indeterminate result before caller timeout", async () => {
-  const env = fakeEnvironment({ goto: "pending" });
-  const startedAt = Date.now();
-  const result = await acquireXhsSearchWorkspace(env.browser, {
-    navigationSoftDeadlineMs: 20,
+  const visible = await inspectXhsVisibleWorkspaceCandidates(env.browser);
+  const created = await createXhsSearchWorkspaceBlankCandidate(env.browser, {
+    discovery: visible,
+  });
+  const result = await navigateXhsBlankWorkspaceCandidate(created.tab, {
+    candidate: created.workspace_candidate,
   });
   assert.equal(result.status, "blocked_external_runtime");
-  assert.equal(
-    result.reason,
-    "homepage_navigation_indeterminate_before_acquire_deadline",
-  );
-  assert.equal(result.homepage_navigation_result, "soft_deadline_indeterminate");
-  assert.equal(result.browser_binding_verified, true);
-  assert.equal(result.new_tabs_created, 1);
+  assert.equal(result.reason, "homepage_navigation_result_unavailable");
   assert.equal(result.homepage_navigations_attempted, 1);
-  assert.equal(Date.now() - startedAt < 250, true);
-  assert.equal(env.calls.filter((call) => call[0] === "new").length, 1);
   assert.equal(env.calls.filter((call) => call[0] === "goto").length, 1);
-  assert.equal(env.calls.some((call) => call[0] === "press"), false);
+  assert.equal(env.calls.some((call) => call[0] === "evaluate"), false);
+  assert.equal(env.calls.some((call) => call[0] === "get_visible_dom"), false);
 });
 
-test("pending tab creation returns structured indeterminate result before any navigation", async () => {
-  const env = fakeEnvironment({ newTabPending: true });
-  const startedAt = Date.now();
-  const result = await acquireXhsSearchWorkspace(env.browser, {
-    acquireResultSoftDeadlineMs: 30,
+test("session reset during explicit navigation is classified without recovery actions", async () => {
+  const env = fakeEnvironment({ goto: "reset" });
+  const visible = await inspectXhsVisibleWorkspaceCandidates(env.browser);
+  const created = await createXhsSearchWorkspaceBlankCandidate(env.browser, {
+    discovery: visible,
+  });
+  const result = await navigateXhsBlankWorkspaceCandidate(created.tab, {
+    candidate: created.workspace_candidate,
   });
   assert.equal(result.status, "blocked_external_runtime");
+  assert.equal(result.reason, "homepage_navigation_result_unavailable");
+  assert.equal(env.calls.filter((call) => call[0] === "goto").length, 1);
+  assert.equal(env.calls.filter((call) => call[0] === "new").length, 1);
+  assert.equal(env.calls.filter((call) => call[0] === "list").length, 0);
+  assert.equal(env.calls.filter((call) => call[0] === "openTabs").length, 1);
+});
+
+test("indeterminate navigation recovery requires bounded exact-attempt proof before its only RPC", async () => {
+  const env = fakeEnvironment({
+    initialTabs: [{ id: "1", url: "https://www.xiaohongshu.com/explore" }],
+  });
+  const result = await recoverXhsWorkspaceAfterIndeterminateNavigation(
+    env.browser,
+  );
+  assert.equal(result.status, "blocked");
+  assert.equal(result.reason, "indeterminate_navigation_attempt_proof_required");
+  assert.equal(result.workspace_stage_rpcs_attempted, 0);
+  assert.equal(result.navigation_replayed, false);
+  assert.equal(env.calls.length, 0);
+});
+
+test("indeterminate navigation is reconciled by one exact-id task list without replay", async () => {
+  const env = fakeEnvironment({
+    initialTabs: [{ id: "1", url: "https://www.xiaohongshu.com/explore" }],
+  });
+  const result = await recoverXhsWorkspaceAfterIndeterminateNavigation(
+    env.browser,
+    { navigationAttempt: INDETERMINATE_NAVIGATION_ATTEMPT },
+  );
+  assert.equal(result.status, "workspace_candidate_ready");
+  assert.equal(result.workspace_candidate.id, "1");
+  assert.equal(
+    result.method,
+    "recover_exact_workspace_after_indeterminate_navigation_via_single_task_list",
+  );
+  assert.equal(result.navigation_result_received, false);
+  assert.equal(result.navigation_outcome_inferred, false);
+  assert.equal(result.navigation_replayed, false);
+  assert.equal(result.recovery_rpcs_attempted, 1);
+  assert.deepEqual(env.calls, [["list", 1]]);
+});
+
+test("fresh foreground id 3 navigation loss permits one exact-id recovery and no replay", async () => {
+  const env = fakeEnvironment({
+    initialTabs: [{ id: "3", url: "https://www.xiaohongshu.com/explore" }],
+  });
+  const result = await recoverXhsWorkspaceAfterIndeterminateNavigation(
+    env.browser,
+    {
+      navigationAttempt: {
+        browser_rpc: "tab.goto",
+        called_exactly_once: true,
+        result_received: false,
+        workspace_candidate_id: "3",
+        homepage_navigations_attempted: 1,
+        retry_performed: false,
+      },
+    },
+  );
+  assert.equal(result.status, "workspace_candidate_ready");
+  assert.equal(result.workspace_candidate.id, "3");
+  assert.equal(result.navigation_result_received, false);
+  assert.equal(result.navigation_outcome_inferred, false);
+  assert.equal(result.navigation_replayed, false);
+  assert.equal(result.recovery_rpcs_attempted, 1);
+  assert.deepEqual(env.calls, [["list", 1]]);
+});
+
+test("indeterminate navigation recovery stops on the same exact blank tab without retry", async () => {
+  const env = fakeEnvironment({
+    initialTabs: [{ id: "1", url: "about:blank" }],
+  });
+  const result = await recoverXhsWorkspaceAfterIndeterminateNavigation(
+    env.browser,
+    { navigationAttempt: INDETERMINATE_NAVIGATION_ATTEMPT },
+  );
+  assert.equal(result.status, "blocked");
+  assert.equal(result.reason, "homepage_navigation_not_verified_by_exact_task_tab");
+  assert.equal(result.workspace_candidate.id, "1");
+  assert.equal(result.workspace_candidate.url, "about:blank");
+  assert.equal(result.navigation_replayed, false);
+  assert.equal(result.homepage_navigations_attempted, 0);
+  assert.equal(env.calls.filter((call) => call[0] === "list").length, 1);
+  assert.equal(env.calls.some((call) => call[0] === "goto"), false);
+  assert.equal(env.calls.some((call) => call[0] === "new"), false);
+});
+
+test("released workspace recovery requires exact task-loss proof before visible-tab RPC", async () => {
+  const env = fakeEnvironment({
+    userTabs: [{ id: "released", url: "https://www.xiaohongshu.com/explore" }],
+  });
+  const result = await recoverXhsReleasedWorkspaceAfterTaskCandidateLoss(
+    env.browser,
+  );
+  assert.equal(result.status, "blocked");
   assert.equal(
     result.reason,
-    "task_tab_creation_indeterminate_before_acquire_deadline",
+    "task_candidate_loss_proof_required_before_visible_recovery",
   );
-  assert.equal(result.acquire_deadline_stage, "task_tab_creation");
-  assert.equal(result.new_tab_creation_attempts, 1);
-  assert.equal(result.new_tabs_created, null);
-  assert.equal(result.homepage_navigations_attempted, 0);
-  assert.equal(Date.now() - startedAt < 250, true);
-  assert.equal(env.calls.filter((call) => call[0] === "new").length, 1);
+  assert.equal(result.visible_workspace_recovery_rpcs_attempted, 0);
+  assert.equal(env.calls.length, 0);
+});
+
+test("one released Xiaohongshu workspace is returned exactly without claim", async () => {
+  const released = {
+    id: "released-home",
+    title: "小红书",
+    url: "https://www.xiaohongshu.com/explore",
+  };
+  const env = fakeEnvironment({ userTabs: [released] });
+  const result = await recoverXhsReleasedWorkspaceAfterTaskCandidateLoss(
+    env.browser,
+    { lossProof: TASK_CANDIDATE_LOSS_PROOF },
+  );
+  assert.equal(result.status, "released_workspace_candidate_ready");
+  assert.strictEqual(result.released_workspace_candidate, released);
+  assert.equal(result.lost_workspace_candidate_id, "1");
+  assert.equal(result.continuity_to_lost_task_id_inferred, false);
+  assert.deepEqual(env.calls, [["openTabs"]]);
+});
+
+test("multiple released Xiaohongshu workspaces fail closed before claim", async () => {
+  const env = fakeEnvironment({
+    userTabs: [
+      { id: "released-1", url: "https://www.xiaohongshu.com/" },
+      { id: "released-2", url: "https://www.xiaohongshu.com/explore" },
+    ],
+  });
+  const result = await recoverXhsReleasedWorkspaceAfterTaskCandidateLoss(
+    env.browser,
+    { lossProof: TASK_CANDIDATE_LOSS_PROOF },
+  );
+  assert.equal(result.status, "blocked");
+  assert.equal(result.reason, "released_visible_workspace_candidate_not_unique");
+  assert.equal(result.user_workspace_candidates_found, 2);
+  assert.equal(env.calls.filter((call) => call[0] === "openTabs").length, 1);
+  assert.equal(env.calls.some((call) => call[0] === "claimTab"), false);
+});
+
+test("missing released workspace remains externally blocked without creation or navigation", async () => {
+  const env = fakeEnvironment({ userTabs: [] });
+  const result = await recoverXhsReleasedWorkspaceAfterTaskCandidateLoss(
+    env.browser,
+    { lossProof: TASK_CANDIDATE_LOSS_PROOF },
+  );
+  assert.equal(result.status, "blocked_external_runtime");
+  assert.equal(result.reason, "released_visible_workspace_candidate_not_found");
+  assert.equal(env.calls.filter((call) => call[0] === "openTabs").length, 1);
+  assert.equal(env.calls.some((call) => call[0] === "claimTab"), false);
+  assert.equal(env.calls.some((call) => call[0] === "new"), false);
   assert.equal(env.calls.some((call) => call[0] === "goto"), false);
 });
 
-test("session reset with no remaining tab is classified as blocked_external_runtime", async () => {
-  const env = fakeEnvironment({ goto: "reset", listAfterGoto: [] });
-  const result = await acquireXhsSearchWorkspace(env.browser);
-  assert.equal(result.status, "blocked_external_runtime");
-  assert.equal(result.reason, "no_rebindable_tab_after_homepage_navigation");
-  assert.equal(result.rebindable_tabs_found, 0);
-  assert.equal(env.calls.filter((call) => call[0] === "goto").length, 1);
-  assert.equal(env.calls.filter((call) => call[0] === "new").length, 1);
+test("released workspace claim requires the complete current discovery result", async () => {
+  const env = fakeEnvironment();
+  const result = await claimXhsReleasedWorkspaceCandidate(env.browser);
+  assert.equal(result.status, "blocked");
+  assert.equal(result.reason, "released_workspace_discovery_proof_required_before_claim");
+  assert.equal(result.user_tab_claims_attempted, 0);
+  assert.equal(env.calls.length, 0);
 });
 
-test("homepage navigation reset claims the released visible homepage tab", async () => {
-  const env = fakeEnvironment({
-    goto: "reset",
-    listAfterGoto: [],
-    userTabsAfterGoto: [
-      {
-        id: "released-home",
-        title: "小红书",
-        url: "https://www.xiaohongshu.com/",
-      },
-    ],
-  });
-  const result = await acquireXhsSearchWorkspace(env.browser);
-  assert.equal(result.status, "workspace_ready");
-  assert.equal(
-    result.method,
-    "claim_released_user_workspace_after_homepage_navigation",
+test("one exact released workspace is claimed once under a new task id then freshly verified", async () => {
+  const released = {
+    id: "released-home",
+    title: "小红书",
+    url: "https://www.xiaohongshu.com/explore",
+  };
+  const env = fakeEnvironment({ userTabs: [released] });
+  const discovery = await recoverXhsReleasedWorkspaceAfterTaskCandidateLoss(
+    env.browser,
+    { lossProof: TASK_CANDIDATE_LOSS_PROOF },
   );
-  assert.equal(result.user_tab_claims_attempted, 1);
-  assert.equal(env.calls.filter((call) => call[0] === "goto").length, 1);
+  const claimed = await claimXhsReleasedWorkspaceCandidate(env.browser, {
+    discovery,
+  });
+  assert.equal(claimed.status, "released_workspace_tab_claimed");
+  assert.equal(claimed.lost_workspace_candidate_id, "1");
+  assert.equal(claimed.current_workspace_candidate_id, "task-tab-1");
+  assert.equal(claimed.lost_task_id_reused_as_current_id, false);
+  assert.equal(claimed.continuity_to_lost_task_id_inferred, false);
   assert.equal(env.calls.filter((call) => call[0] === "claimTab").length, 1);
+  const verified = await verifyXhsSearchWorkspaceCandidate(claimed.tab, {
+    candidate: claimed.workspace_candidate,
+    requiredProfileId: PROFILE_ID,
+  });
+  assert.equal(verified.status, "workspace_ready");
+  assert.equal(verified.identity_state.identity_verified, true);
+  assert.equal(env.calls.filter((call) => call[0] === "get_visible_dom").length, 1);
+  assert.equal(env.calls.some((call) => call[0] === "goto"), false);
+  assert.equal(env.calls.some((call) => call[0] === "new"), false);
+});
+
+test("an exact blank checkpoint is reused instead of creating another tab", async () => {
+  const env = fakeEnvironment({
+    initialTabs: [{ id: "1", url: "about:blank" }],
+  });
+  const acquire = await acquireXhsSearchWorkspace(env.browser);
+  assert.equal(acquire.status, "workspace_bootstrap_candidate_ready");
+  assert.equal(acquire.workspace_candidate.id, "1");
+  const rebound = await rebindXhsBlankWorkspaceCandidate(env.browser, {
+    candidate: acquire.workspace_candidate,
+  });
+  assert.equal(rebound.status, "blank_workspace_tab_rebound");
+  const result = await navigateXhsBlankWorkspaceCandidate(rebound.tab, {
+    candidate: rebound.workspace_candidate,
+  });
+  assert.equal(result.status, "homepage_navigation_completed");
+  assert.equal(env.calls.filter((call) => call[0] === "goto").length, 1);
+  assert.equal(env.calls.filter((call) => call[0] === "new").length, 0);
+  assert.equal(env.calls.filter((call) => call[0] === "openTabs").length, 0);
 });
 
 test("explicit browser disconnect is classified before any tab creation", async () => {
