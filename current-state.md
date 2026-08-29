@@ -1979,3 +1979,29 @@ slot 2 的侧栏“我”现场 profile id 为 `634c02a1000000001901c0e6`，与�
   若仍出现，说明 worker 仍旧，立即停止且不把它归因于平台、登录或网络。
 - 02 向原 01 发送有限回流结果时，任务消息接口返回 `Transport closed`，因此本轮未声称已送达，也没有
   重试或自动启动业务。用户下一次打开或在 01 发消息时，01 直接读取本节与上述回执后执行唯一复测。
+
+## 54. 小红书浏览器能力已正式转交 02 维护
+
+- 用户已把小红书浏览器能力正式交由 `02｜小红书审核与程序维护` 维护。固定路由为：
+  `playwright_debug` 只处理普通公开网页、本地页面和无登录调试；`playwright_browser` 处理小红书等
+  需要保持登录状态的网站，并且只使用 D 盘专用 Chrome 资料目录，不读取或复制用户日常 Chrome 资料。
+- 浏览器工作只允许浏览器内部协议控制，禁止 Windows Computer Use、桌面捕获、抢焦点、鼠标或键盘
+  注入。原生 Browser/IAB 的 `affected-origin` 继续视为产品层问题；遇到该错误直接改用上述 MCP，
+  不再围绕同一错误反复转单、自愈、修改 Codex 安装包或重启后台。
+- `playwright_browser` 使用正常 Chrome 内核，启动时最小化并移到屏幕外；标准导航包含 commit 级别一次
+  有界重试。每轮结束必须调用 `browser_close`，并确认专用进程退出。
+- 2026-08-29 交接验收证据显示：登录后的“水波炉 - 小红书搜索”未出现登录弹窗或二维码，渲染
+  20 条唯一结果；前三条包括“水波炉风太大了”“入手了三个月的东芝水波炉D4000”与
+  “🆘求助帖🆘 东芝水波炉好用吗？”；浏览器回归 65 项通过，专用进程在关闭后为 0。
+  这些是既有交接验收记录，本轮没有重新访问小红书或执行账号动作。
+- 当前 02 任务的只读工具清单可见 `playwright_debug`（35 项工具，含 `browser_close`），但尚未显示
+  `playwright_browser`。本机 `C:\Users\lzdwy\.codex\config.toml` 已登记两个 MCP，故按交接规则仅记录
+  “需重新打开任务加载新工具”；不得因此修改安装包、重启后台或切换桌面控制。
+- 实现与证据由 `D:\AI\tachikoma\scripts\start_playwright_browser_mcp.ps1`、
+  `D:\AI\tachikoma\config\playwright_browser_mcp.json`、
+  `D:\AI\tachikoma\config\playwright_browser_init_page.ts`、
+  `D:\AI\tachikoma\tools\browser_debug.py` 和
+  `D:\AI\tachikoma\docs\browser-debug-fallback-acceptance-2026-08-29.md` 保存。
+  本轮只核对文件、配置和专用进程状态；当前使用该专用资料目录的 Chrome 进程为 0（常驻 MCP 的
+  Node 服务进程不计为浏览器会话）。没有复制运行时、修改模型或执行小红书业务动作。有限交接回执：
+  `research/panse_multi_direction/daily_runs/2026-08-29/browser_capability_maintenance_handoff_receipt_20260829.json`。
