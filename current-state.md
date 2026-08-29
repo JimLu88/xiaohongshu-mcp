@@ -1896,3 +1896,14 @@ slot 2 的侧栏“我”现场 profile id 为 `634c02a1000000001901c0e6`，与�
 - 当前是平台安全门，不转交 02。slot 1 状态为 `blocked_waiting_user_security_confirmation`；
   用户切换到可靠网络环境后明确说“继续”，01 才能从新的前台核验开始，且仍不得把旧页面或账号状态
   当作有效证据。
+
+### 52.1 用户当前 IAB 现场已反证“整体 IP 风险”结论，状态已纠正
+
+- 用户提供的当前截图和可见 IAB 状态显示，小红书搜索结果已在其内置浏览器正常加载。因此，第 52 节
+  的 `error_code=300012` 只能归因于独立 `playwright_debug` 上下文，不能外推为用户当前网络或 IAB
+  会话被平台拦截，更不能继续作为今日停止理由。
+- 已恢复 slot 1 为 `ready_for_in_app_browser_reverification`，当日计数保持 0；原安全停止回执保留为
+  独立调试通道的历史证据。更正回执：
+  `daily_runs/2026-08-29/account_1_platform_access_correction_receipt_20260829.json`。
+- 当前仍未验证 slot 1 身份、登录和账号风险；后续只能从新的任务所有 IAB 读取开始，不能用旧任务对象、
+  旧额度、草稿或批准推断。
