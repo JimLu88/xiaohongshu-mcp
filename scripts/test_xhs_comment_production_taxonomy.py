@@ -11,6 +11,7 @@ from lib.xhs_comment_production_taxonomy import (
     validate_production_context,
 )
 from run_xhs_style_lab import (
+    LENGTH_MIX_MARKER,
     OFFICIAL_GOVERNANCE_MARKER,
     PUBLIC_COMMENT_POLICY_MARKER,
     build_runtime_request_payload,
@@ -47,6 +48,23 @@ def official_preflight() -> dict:
         "comment_direction_id": "request_more_evidence",
         "human_approved_example_set_version": "panse-xhs-human-approved-comments.v3",
         "direction_contract": {"character_range": {"minimum": 25, "maximum": 70}},
+        "comment_length_mix": {
+            "policy_id": "panse-xhs-comment-length-mix.v1",
+            "batch_id": "synthetic-official-5",
+            "batch_size": 5,
+            "item_index": 3,
+            "tier_id": "medium",
+            "tier_label": "中评",
+            "minimum_chars": 17,
+            "maximum_chars": 30,
+            "allocation": {
+                "very_short": 1,
+                "short": 1,
+                "medium": 2,
+                "long": 1,
+            },
+            "eligible_tiers": ["very_short", "short", "medium", "long"],
+        },
     }
 
 
@@ -58,6 +76,13 @@ def official_request() -> dict:
         "required_model_id": "gpt-5.6-sol",
         "fallback_model_allowed": False,
         "panse_intent_context": {"voice_id": "official_explanation"},
+        "panse_comment_length_context": {
+            "policy_id": "panse-xhs-comment-length-mix.v1",
+            "batch_id": "synthetic-official-5",
+            "batch_size": 5,
+            "item_index": 3,
+            "eligible_tiers": ["very_short", "short", "medium", "long"],
+        },
         "panse_official_topic_context": {"must_not_reach_runtime_schema": True},
         "panse_official_professional_value_context": {
             "must_not_reach_runtime_schema": True
@@ -136,11 +161,13 @@ def test_official_runner_accepts_verified_official_contracts_without_category() 
     payload = build_runtime_request_payload(official_request(), preflight)
     assert OFFICIAL_GOVERNANCE_MARKER in payload["brief_text"]
     assert PUBLIC_COMMENT_POLICY_MARKER in payload["brief_text"]
+    assert LENGTH_MIX_MARKER in payload["brief_text"]
     assert "panse_official_topic_context" not in payload
     assert "panse_official_professional_value_context" not in payload
     assert "comment_intent_context" not in payload
     assert payload["required_model_id"] == "gpt-5.6-sol"
     assert payload["fallback_model_allowed"] is False
+    assert payload["output"] == {"body_min_chars": 25, "body_max_chars": 30}
 
 
 def test_nonofficial_runner_still_requires_production_category() -> None:

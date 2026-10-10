@@ -1,0 +1,11 @@
+<!doctype html><html lang="zh"><meta charset="utf-8"><title>LOCAL TEST ONLY</title>
+<body><a href="/user/profile/111111111111111111111111">我</a>
+<h1 id="title">本地模拟帖子</h1><section id="comments"><p>已有评论</p></section>
+<textarea id="editor" aria-label="评论"></textarea><button id="send">发送</button>
+<p id="risk"></p><script>
+window.testSent = 0;
+document.querySelector('#send').addEventListener('click', () => { window.testSent++; });
+document.querySelector('#editor').addEventListener('keydown', e => {
+  if (e.key === 'Enter') window.testSent++;
+});
+</script></body></html>

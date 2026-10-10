@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "policy_id": "panse-xhs-comment-length-mix.v1",
+  "counting_method": "trimmed_unicode_code_points",
+  "minimum_supported_batch_size": 5,
+  "tiers": [
+    {
+      "tier_id": "very_short",
+      "label": "极短",
+      "minimum_chars": 3,
+      "maximum_chars": 5,
+      "default_weight": 0.15
+    },
+    {
+      "tier_id": "short",
+      "label": "短评",
+      "minimum_chars": 6,
+      "maximum_chars": 16,
+      "default_weight": 0.15
+    },
+    {
+      "tier_id": "medium",
+      "label": "中评",
+      "minimum_chars": 17,
+      "maximum_chars": 30,
+      "default_weight": 0.35
+    },
+    {
+      "tier_id": "long",
+      "label": "长评",
+      "minimum_chars": 31,
+      "maximum_chars": 45,
+      "default_weight": 0.35
+    }
+  ],
+  "batch_constraints": {
+    "very_short_min_share": 0.1,
+    "very_short_max_share": 0.2,
+    "medium_and_long_min_share": 0.6
+  },
+  "allocation": {
+    "method": "constrained_largest_remainder",
+    "tie_break_order": [
+      "very_short",
+      "short",
+      "medium",
+      "long"
+    ]
+  },
+  "generation_rules": {
+    "preserve_content_relevance": true,
+    "invent_facts_to_meet_length_forbidden": true,
+    "compress_entire_batch_to_short_comments_forbidden": true,
+    "batch_validation_required_before_sendable_state": true
+  }
+}

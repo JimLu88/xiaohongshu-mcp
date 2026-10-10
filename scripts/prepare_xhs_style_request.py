@@ -13,6 +13,11 @@ from lib.xhs_comment_production_taxonomy import (
     apply_taxonomy_to_brief,
     validate_production_context,
 )
+from lib.xhs_comment_length_mix import (
+    apply_length_assignment_to_request,
+    build_length_assignment,
+    load_length_mix_policy,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -52,6 +57,153 @@ OFFICIAL_PROFESSIONAL_VALUE_PATH = (
 
 def load_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def validate_global_case_boundary(request_payload: dict, voice_id: str) -> bool:
+    """Require an explicit, source-complete anti-extrapolation boundary for slot 5."""
+    if voice_id != "global_design_observer":
+        return False
+    content_contract = request_payload.get("content_contract")
+    source_context = request_payload.get("source_context")
+    brief_text = str(request_payload.get("brief_text", ""))
+    if not isinstance(content_contract, dict) or not isinstance(source_context, dict):
+        raise ValueError("global observer requires fact and source context")
+    forbidden = "\n".join(
+        str(item) for item in content_contract.get("forbidden_inferences", [])
+    )
+    if "不得把单一国家、市场、品牌或家庭案例外推为普遍结论" not in forbidden:
+        raise ValueError("global observer requires the case extrapolation boundary")
+    if "不得把国外等同于高级" not in forbidden:
+        raise ValueError("global observer requires the foreign-superiority boundary")
+    if not any(token in brief_text for token in ("国家", "市场", "品牌", "年份", "案例", "项目")):
+        raise ValueError(
+            "global observer brief must name its country/market/brand/year/case boundary"
+        )
+    if not all(
+        source_context.get(field) is True
+        for field in ("body_complete", "visible_comments_complete", "images_complete")
+    ):
+        raise ValueError("global observer role override requires complete source context")
+    return True
+
+
+def resolve_direction_length_contract(
+    *,
+    voice_id: str,
+    role_policy: dict,
+    comment_direction_id: str,
+    direction_policy: dict,
+    length_assignment: dict,
+    official_contracts_verified: bool,
+    nonofficial_contracts_verified: bool = False,
+    global_case_boundary_verified: bool = False,
+) -> dict:
+    """Apply an exact role-scoped micro-response override, otherwise base range."""
+    base_range = dict(direction_policy["character_range"])
+    result = dict(direction_policy)
+    result["base_character_range"] = base_range
+    result["length_tier_override_applied"] = False
+    tier_id = length_assignment["tier_id"]
+    tier_override = (
+        role_policy.get("length_tier_direction_overrides", {}).get(tier_id)
+    )
+    if not isinstance(tier_override, dict):
+        result["character_range"] = base_range
+        return result
+    if comment_direction_id not in tier_override.get("allowed_direction_ids", []):
+        result["character_range"] = base_range
+        return result
+    override_range = tier_override.get("direction_ranges", {}).get(
+        comment_direction_id
+    )
+    if not isinstance(override_range, dict):
+        raise ValueError("role-scoped length override is missing its direction range")
+    required = set(tier_override.get("requires", []))
+    if voice_id == "official_explanation":
+        if not official_contracts_verified:
+            raise ValueError(
+                "official direction override requires verified official contracts"
+            )
+        expected_required = {
+            "official_topic_context_verified",
+            "official_professional_value_context_verified",
+            "source_context_complete",
+        }
+        if required != expected_required:
+            raise ValueError("official direction override contract drifted")
+    elif voice_id in {
+        "stylist",
+        "evaluation_judgment",
+        "space_advisor",
+        "global_design_observer",
+    }:
+        if not nonofficial_contracts_verified:
+            raise ValueError(
+                f"{voice_id} direction override requires verified nonofficial contracts"
+            )
+        expected_required = {
+            "production_taxonomy_verified",
+            "single_primary_speech_act_verified",
+            "source_context_complete",
+        }
+        if voice_id == "global_design_observer":
+            if not global_case_boundary_verified:
+                raise ValueError(
+                    "global observer direction override requires a verified case boundary"
+                )
+            expected_required.add("global_case_boundary_verified")
+        if required != expected_required:
+            raise ValueError(
+                f"{voice_id} direction override contract drifted"
+            )
+    else:
+        raise ValueError("unsupported role-scoped direction override")
+    expected_contract = {
+        ("official_explanation", "very_short"): (
+            "light_social_response", 3, 5
+        ),
+        ("stylist", "very_short"): ("light_social_response", 3, 5),
+        ("evaluation_judgment", "very_short"): (
+            "size_clearance_question", 3, 5
+        ),
+        ("evaluation_judgment", "short"): (
+            "size_clearance_question", 6, 16
+        ),
+        ("space_advisor", "very_short"): (
+            "layout_circulation_question", 3, 5
+        ),
+        ("space_advisor", "short"): (
+            "layout_circulation_question", 6, 16
+        ),
+        ("global_design_observer", "very_short"): (
+            "detail_grounded_praise", 3, 5
+        ),
+        ("global_design_observer", "short"): (
+            "detail_grounded_praise", 6, 16
+        ),
+    }.get((voice_id, tier_id))
+    if expected_contract is None:
+        raise ValueError("unsupported role-scoped direction override")
+    expected_direction, expected_minimum, expected_maximum = expected_contract
+    if (
+        comment_direction_id != expected_direction
+        or int(override_range.get("minimum", -1)) != expected_minimum
+        or int(override_range.get("maximum", -1)) != expected_maximum
+    ):
+        raise ValueError("unsupported role-scoped direction override")
+    result["character_range"] = {
+        "minimum": expected_minimum,
+        "maximum": expected_maximum,
+    }
+    result["length_tier_override_applied"] = True
+    result["length_tier_override"] = {
+        "voice_id": voice_id,
+        "tier_id": tier_id,
+        "comment_direction_id": comment_direction_id,
+        "requires": sorted(required),
+        "generation_instruction": tier_override["generation_instruction"],
+    }
+    return result
 
 
 def validate_official_topic_context(
@@ -211,6 +363,7 @@ def main() -> int:
     colloquial_lexicon = load_json(COLLOQUIAL_LEXICON_PATH)
     official_topic_strategy = load_json(OFFICIAL_TOPIC_STRATEGY_PATH)
     official_professional_value = load_json(OFFICIAL_PROFESSIONAL_VALUE_PATH)
+    length_mix_policy = load_length_mix_policy()
     tachikoma_root = Path(contract["style_lab"]["runtime_root"]).resolve()
     style_card_db = Path(contract["style_lab"]["style_card_db"]).resolve()
     if not style_card_db.is_file():
@@ -230,12 +383,21 @@ def main() -> int:
         if args.request_path == "-"
         else load_json(Path(args.request_path))
     )
+    length_context = request_payload.pop("panse_comment_length_context", None)
+    length_assignment = build_length_assignment(
+        length_context,
+        length_mix_policy,
+    )
     intent_context = request_payload.pop("panse_intent_context", None)
     if not isinstance(intent_context, dict):
         raise ValueError("panse_intent_context is required before Style Lab compilation")
     if intent_context.get("policy_version") != intent_policy["policy_version"]:
         raise ValueError("comment intent policy version mismatch")
     voice_id = str(intent_context.get("voice_id", "")).strip()
+    global_case_boundary_verified = validate_global_case_boundary(
+        request_payload,
+        voice_id,
+    )
     production_contract = None
     if (
         intent_context.get("production_taxonomy_version") is not None
@@ -348,8 +510,37 @@ def main() -> int:
                 if approved_examples
                 else None
             ),
+            "length_policy_id": length_assignment["policy_id"],
+            "length_tier_id": length_assignment["tier_id"],
+            "length_override_contract_id": (
+                "panse-xhs-role-scoped-comment-length.v1"
+                if comment_direction_id
+                in (
+                    role_policy.get("length_tier_direction_overrides", {})
+                    .get(length_assignment["tier_id"], {})
+                    .get("allowed_direction_ids", [])
+                )
+                else None
+            ),
+            "global_case_boundary_verified": global_case_boundary_verified,
         }
-    direction_range = direction_policy["character_range"]
+    effective_direction_policy = resolve_direction_length_contract(
+        voice_id=voice_id,
+        role_policy=role_policy,
+        comment_direction_id=comment_direction_id,
+        direction_policy=direction_policy,
+        length_assignment=length_assignment,
+        official_contracts_verified=(
+            official_topic_context is not None
+            and official_professional_value_context is not None
+        ),
+        nonofficial_contracts_verified=(
+            production_contract is not None
+            and production_contract.get("single_primary_speech_act") is True
+        ),
+        global_case_boundary_verified=global_case_boundary_verified,
+    )
+    direction_range = effective_direction_policy["character_range"]
     output_contract = request_payload.setdefault("output", {})
     output_contract["body_min_chars"] = max(
         int(output_contract.get("body_min_chars", 1)),
@@ -359,8 +550,10 @@ def main() -> int:
         int(output_contract.get("body_max_chars", 20_000)),
         int(direction_range["maximum"]),
     )
-    if output_contract["body_min_chars"] > output_contract["body_max_chars"]:
-        raise ValueError("request output range does not overlap the direction contract")
+    request_payload = apply_length_assignment_to_request(
+        request_payload,
+        length_assignment,
+    )
 
     request = StyleWritingRequest.model_validate(request_payload)
     bundle, _instruction = prepare_style_bundle(request)
@@ -372,6 +565,7 @@ def main() -> int:
         "request_id": request.request_id,
         "intent_policy_version": intent_policy["policy_version"],
         "voice_id": voice_id,
+        "global_case_boundary_verified": global_case_boundary_verified,
         "production_taxonomy_verified": production_contract is not None,
         "production_contract": production_contract,
         "interaction_intent": interaction_intent,
@@ -391,7 +585,8 @@ def main() -> int:
         ),
         "official_professional_value_context": official_professional_value_context,
         "voice_contract": role_policy["voice_contract"],
-        "direction_contract": direction_policy,
+        "direction_contract": effective_direction_policy,
+        "comment_length_mix": length_assignment,
         "colloquial_lexicon_contract": colloquial_lexicon,
         "human_approved_example_set_version": example_corpus[
             "example_set_version"

@@ -19,6 +19,13 @@ from pathlib import Path
 from typing import Any
 
 from lib.xhs_comment_production_taxonomy import apply_taxonomy_to_brief
+from lib.xhs_comment_length_mix import (
+    LENGTH_MIX_MARKER,
+    apply_length_assignment_to_request,
+    build_length_assignment,
+    load_length_mix_policy,
+    validate_generated_comment_length,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -201,8 +208,17 @@ def compile_project_preflight(request_path: Path) -> dict[str, Any]:
 def build_runtime_request_payload(
     raw: dict[str, Any],
     preflight: dict[str, Any],
+    length_assignment: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     payload = dict(raw)
+    length_context = payload.pop("panse_comment_length_context", None)
+    active_policy = load_length_mix_policy()
+    computed_assignment = build_length_assignment(length_context, active_policy)
+    if length_assignment is not None and length_assignment != computed_assignment:
+        raise RuntimeError("runtime comment length assignment drifted before generation")
+    length_assignment = computed_assignment
+    if preflight.get("comment_length_mix") != length_assignment:
+        raise RuntimeError("Style Lab preflight and runtime length assignments differ")
     intent = payload.pop("panse_intent_context", None)
     if not isinstance(intent, dict):
         raise ValueError("panse_intent_context is required")
@@ -222,6 +238,18 @@ def build_runtime_request_payload(
             "human_approved_example_set_version": preflight[
                 "human_approved_example_set_version"
             ],
+            "length_policy_id": length_assignment["policy_id"],
+            "length_tier_id": length_assignment["tier_id"],
+            "length_override_contract_id": (
+                "panse-xhs-role-scoped-comment-length.v1"
+                if preflight["direction_contract"].get(
+                    "length_tier_override_applied"
+                ) is True
+                else None
+            ),
+            "global_case_boundary_verified": preflight.get(
+                "global_case_boundary_verified", False
+            ),
         }
     payload = apply_public_comment_text_policy_to_brief(payload)
     direction_range = preflight["direction_contract"]["character_range"]
@@ -233,6 +261,10 @@ def build_runtime_request_payload(
     output["body_max_chars"] = min(
         int(output.get("body_max_chars", 20_000)),
         int(direction_range["maximum"]),
+    )
+    payload = apply_length_assignment_to_request(
+        payload,
+        length_assignment,
     )
     payload["required_model_id"] = REQUIRED_MODEL
     payload["fallback_model_allowed"] = False
@@ -273,7 +305,11 @@ def verify_public_comment_text(result: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def verify_actual_run(result: dict[str, Any]) -> dict[str, Any]:
+def verify_actual_run(
+    result: dict[str, Any],
+    length_assignment: dict[str, Any] | None = None,
+    effective_output: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     traces = result.get("provider_runs")
     if not isinstance(traces, list):
         raise ValueError("Style Lab result is missing provider_runs")
@@ -301,6 +337,13 @@ def verify_actual_run(result: dict[str, Any]) -> dict[str, Any]:
     if any(result.get("side_effects", {}).values()):
         raise ValueError("Style Lab drafting must not perform side effects")
     text_policy = verify_public_comment_text(result)
+    length_verification = None
+    if length_assignment is not None:
+        length_verification = validate_generated_comment_length(
+            result["draft"]["draft_text"],
+            length_assignment,
+            effective_output,
+        )
     return {
         "actual_style_lab_run_verified": True,
         "provider": REQUIRED_PROVIDER,
@@ -310,6 +353,7 @@ def verify_actual_run(result: dict[str, Any]) -> dict[str, Any]:
         "delivery_ready_for_human_review": True,
         "publish_allowed": False,
         "public_comment_text_policy": text_policy,
+        "comment_length_mix": length_verification,
     }
 
 
@@ -342,6 +386,7 @@ def main() -> int:
     args = parser.parse_args()
 
     request_model, generate_style_content, runtime_root = load_runtime()
+    length_mix_policy = load_length_mix_policy()
     if args.check_runtime:
         print(
             json.dumps(
@@ -354,6 +399,9 @@ def main() -> int:
                     "fallback_model_allowed": False,
                     "public_comment_text_policy_id": PUBLIC_COMMENT_TEXT_POLICY_ID,
                     "deterministic_comment_text_gate_enabled": True,
+                    "comment_length_mix_policy_id": length_mix_policy["policy_id"],
+                    "comment_length_mix_marker": LENGTH_MIX_MARKER,
+                    "comment_length_mix_gate_enabled": True,
                     "model_invoked": False,
                     "external_action_performed": False,
                 },
@@ -376,10 +424,22 @@ def main() -> int:
         ).encode("utf-8")
     ).hexdigest()
     preflight = compile_project_preflight(request_path)
-    runtime_payload = build_runtime_request_payload(raw, preflight)
+    length_assignment = build_length_assignment(
+        raw.get("panse_comment_length_context"),
+        length_mix_policy,
+    )
+    runtime_payload = build_runtime_request_payload(
+        raw,
+        preflight,
+        length_assignment,
+    )
     request = request_model.model_validate(runtime_payload)
     result = generate_style_content(request)
-    verification = verify_actual_run(result)
+    verification = verify_actual_run(
+        result,
+        length_assignment,
+        runtime_payload.get("output"),
+    )
     receipt = {
         "schema_version": 1,
         "receipt_type": "panse_xhs_actual_style_lab_run",
@@ -392,6 +452,7 @@ def main() -> int:
         .replace("+00:00", "Z"),
         "production_contract": preflight["production_contract"],
         "compile_receipt": preflight,
+        "comment_length_mix": length_assignment,
         "execution_verification": verification,
         "style_lab_result": result,
         "human_review_required": True,
@@ -408,6 +469,7 @@ def main() -> int:
                     "draft_text": result["draft"]["draft_text"],
                     "output": str(Path(args.output).resolve()),
                     "publish_allowed": False,
+                    "comment_length_mix_gate_passed": True,
                 },
                 ensure_ascii=False,
                 indent=2,

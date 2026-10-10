@@ -280,6 +280,20 @@ export const ROLE_DIRECTIONS = {
       "acquisition_channel_question", "request_more_evidence", "verified_same_situation",
       "verified_self_display", "invited_peer_tip", "contextual_difference", "light_social_response",
     ],
+    length_tier_direction_overrides: {
+      very_short: {
+        allowed_direction_ids: ["light_social_response"],
+        direction_ranges: {
+          light_social_response: { minimum: 3, maximum: 5 },
+        },
+        requires: [
+          "production_taxonomy_verified",
+          "single_primary_speech_act_verified",
+          "source_context_complete",
+        ],
+        generation_instruction: "只顺着一个已核实的具体点自然接一句；不得写空泛套话，不得补事实凑字数。",
+      },
+    },
   },
   evaluation_judgment: {
     account_id: "furniture_decision_editor",
@@ -305,6 +319,32 @@ export const ROLE_DIRECTIONS = {
       "request_more_evidence", "detail_grounded_praise", "invited_peer_tip", "invited_peer_tip",
       "contextual_difference", "light_social_response",
     ],
+    length_tier_direction_overrides: {
+      very_short: {
+        allowed_direction_ids: ["size_clearance_question"],
+        direction_ranges: {
+          size_clearance_question: { minimum: 3, maximum: 5 },
+        },
+        requires: [
+          "production_taxonomy_verified",
+          "single_primary_speech_act_verified",
+          "source_context_complete",
+        ],
+        generation_instruction: "只问一个原帖和当前评论未回答、直接影响购买适配的尺寸或净距问题；保留问号，不得补事实、下质量结论、假装测评或写空泛套话。",
+      },
+      short: {
+        allowed_direction_ids: ["size_clearance_question"],
+        direction_ranges: {
+          size_clearance_question: { minimum: 6, maximum: 16 },
+        },
+        requires: [
+          "production_taxonomy_verified",
+          "single_primary_speech_act_verified",
+          "source_context_complete",
+        ],
+        generation_instruction: "只问一个原帖和当前评论未回答、直接影响购买适配的尺寸或净距问题；保留问号，控制在6—16字，不得补事实、下质量结论、假装测评或写空泛套话。",
+      },
+    },
   },
   space_advisor: {
     account_id: "space_clinic",
@@ -329,6 +369,32 @@ export const ROLE_DIRECTIONS = {
       "color_light_fit_question", "request_more_evidence", "detail_grounded_praise",
       "verified_same_situation", "invited_peer_tip", "light_social_response",
     ],
+    length_tier_direction_overrides: {
+      very_short: {
+        allowed_direction_ids: ["layout_circulation_question"],
+        direction_ranges: {
+          layout_circulation_question: { minimum: 3, maximum: 5 },
+        },
+        requires: [
+          "production_taxonomy_verified",
+          "single_primary_speech_act_verified",
+          "source_context_complete",
+        ],
+        generation_instruction: "只问一个原帖和当前评论未回答的日常动作问题；保留问号，不得补事实、下诊断或写空泛套话。",
+      },
+      short: {
+        allowed_direction_ids: ["layout_circulation_question"],
+        direction_ranges: {
+          layout_circulation_question: { minimum: 6, maximum: 16 },
+        },
+        requires: [
+          "production_taxonomy_verified",
+          "single_primary_speech_act_verified",
+          "source_context_complete",
+        ],
+        generation_instruction: "只问一个原帖和当前评论未回答的日常动作问题；保留问号，控制在6—16字，不得补事实、下诊断或写空泛套话。",
+      },
+    },
   },
   global_design_observer: {
     account_id: "global_furniture_editor",
@@ -354,6 +420,34 @@ export const ROLE_DIRECTIONS = {
       "atmosphere_grounded_praise", "request_more_evidence", "contextual_difference",
       "invited_peer_tip", "light_social_response",
     ],
+    length_tier_direction_overrides: {
+      very_short: {
+        allowed_direction_ids: ["detail_grounded_praise"],
+        direction_ranges: {
+          detail_grounded_praise: { minimum: 3, maximum: 5 },
+        },
+        requires: [
+          "production_taxonomy_verified",
+          "single_primary_speech_act_verified",
+          "source_context_complete",
+          "global_case_boundary_verified",
+        ],
+        generation_instruction: "只夸当前已核实国家、市场、品牌、年份或案例边界内的一个可见细节；不得外推整个国家或市场，不得把国外写成高级，不得补事实凑字数。",
+      },
+      short: {
+        allowed_direction_ids: ["detail_grounded_praise"],
+        direction_ranges: {
+          detail_grounded_praise: { minimum: 6, maximum: 16 },
+        },
+        requires: [
+          "production_taxonomy_verified",
+          "single_primary_speech_act_verified",
+          "source_context_complete",
+          "global_case_boundary_verified",
+        ],
+        generation_instruction: "只夸当前已核实国家、市场、品牌、年份或案例边界内的一个可见细节，控制在6—16字；不得外推整个国家或市场，不得把国外写成高级，不得补事实凑字数。",
+      },
+    },
   },
 };
 
@@ -369,10 +463,25 @@ ROLE_DIRECTIONS.official_explanation = {
   },
   allowed_direction_ids: OFFICIAL_SHARED,
   direction_sequence: OFFICIAL_SHARED,
+  length_tier_direction_overrides: {
+    very_short: {
+      allowed_direction_ids: ["light_social_response"],
+      direction_ranges: {
+        light_social_response: { minimum: 3, maximum: 5 },
+      },
+      requires: [
+        "official_topic_context_verified",
+        "official_professional_value_context_verified",
+        "source_context_complete",
+      ],
+      generation_instruction: "只回应一个已核实的可见点；不得省略成空泛品牌口号，不得补事实凑字数。",
+    },
+  },
 };
 ROLE_DIRECTIONS.principal_sincere_signed = {
   ...ROLE_DIRECTIONS.official_explanation,
   voice_style_id: "verified_founder_reply",
+  length_tier_direction_overrides: {},
   voice_contract: {
     stance: "仅在真实参与得到验证时，以负责人身份说明取舍",
     preferred_words: ["当时我们", "这个版本", "这次取舍"],

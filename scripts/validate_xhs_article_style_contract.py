@@ -157,6 +157,10 @@ def validate(contract_path: Path) -> dict[str, Any]:
     style_lab = contract["style_lab"]
     tachikoma_root = Path(style_lab["runtime_root"]).resolve()
     require(tachikoma_root.is_dir(), f"Tachikoma root not found: {tachikoma_root}")
+    if style_lab.get("style_card_db"):
+        configured_db = Path(style_lab["style_card_db"]).resolve()
+        require(configured_db.is_file(), f"Style Card database not found: {configured_db}")
+        os.environ["TK_STYLE_CARD_DB"] = str(configured_db)
     sys.path.insert(0, str(tachikoma_root))
 
     from base.xiaohongshu_style import (  # pylint: disable=import-outside-toplevel

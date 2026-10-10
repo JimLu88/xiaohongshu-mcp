@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from prepare_xhs_style_request import select_human_approved_examples
+from run_xhs_style_lab import build_runtime_request_payload, load_runtime
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -86,6 +87,13 @@ def main() -> int:
             "single_primary_speech_act": True,
             "source_restatement_avoided": True,
         },
+        "panse_comment_length_context": {
+            "policy_id": "panse-xhs-comment-length-mix.v1",
+            "batch_id": "synthetic-stylist-15",
+            "batch_size": 15,
+            "item_index": 6,
+            "eligible_tiers": ["very_short", "short", "medium", "long"],
+        },
         "source_context": {
             "body": "白墙旁边放了一张浅木色边柜。",
             "visible_comments": [],
@@ -146,6 +154,61 @@ def main() -> int:
     )
     assert receipt["microgenre_contract"]["current_source_is_only_fact_authority"] is True
     assert receipt["publish_allowed"] is False
+
+    very_short = json.loads(json.dumps(synthetic, ensure_ascii=False))
+    very_short["request_id"] = "xhs-wrapper-bom-synthetic-slot2-very-short-001"
+    very_short["idempotency_key"] = "xhs-wrapper-bom-synthetic-slot2-very-short-001-v1"
+    very_short["interaction_mode"] = "light_humor_or_neutral"
+    very_short["panse_intent_context"].update(
+        {
+            "interaction_intent": "neutral_social",
+            "comment_direction_id": "light_social_response",
+        }
+    )
+    very_short["panse_comment_length_context"]["item_index"] = 1
+    very_short["output"]["body_min_chars"] = 1
+    very_short["output"]["body_max_chars"] = 200
+    very_short["style_requirement"] = "approved_required"
+    very_short_completed = subprocess.run(
+        [sys.executable, str(Path(__file__).with_name("prepare_xhs_style_request.py")), "-"],
+        input=b"\xef\xbb\xbf" + json.dumps(very_short, ensure_ascii=False).encode("utf-8"),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert very_short_completed.returncode == 0, very_short_completed.stderr.decode(
+        "utf-8", errors="replace"
+    )
+    very_short_receipt = json.loads(very_short_completed.stdout.decode("utf-8"))
+    assert very_short_receipt["voice_id"] == "stylist"
+    assert very_short_receipt["comment_direction_id"] == "light_social_response"
+    assert very_short_receipt["direction_contract"]["character_range"] == {
+        "minimum": 3,
+        "maximum": 5,
+    }
+    assert very_short_receipt["direction_contract"][
+        "length_tier_override_applied"
+    ] is True
+    assert very_short_receipt["comment_length_mix"]["allocation"] == {
+        "very_short": 3,
+        "short": 2,
+        "medium": 5,
+        "long": 5,
+    }
+    assert very_short_receipt["text_generated"] is False
+    assert very_short_receipt["external_posting_performed"] is False
+    runtime_payload = build_runtime_request_payload(
+        very_short,
+        very_short_receipt,
+    )
+    request_model, _generate_style_content, _runtime_root = load_runtime()
+    runtime_request = request_model.model_validate(runtime_payload)
+    assert runtime_request.output.body_min_chars == 3
+    assert runtime_request.output.body_max_chars == 5
+    assert runtime_request.comment_intent_context.length_tier_id == "very_short"
+    assert runtime_request.comment_intent_context.length_override_contract_id == (
+        "panse-xhs-role-scoped-comment-length.v1"
+    )
     print(
         json.dumps(
             {

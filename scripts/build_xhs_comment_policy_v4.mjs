@@ -59,6 +59,7 @@ const policy = {
     one_comment_one_primary_speech_act: true,
     category_balancing_against_observed_corpus_forbidden: true,
     human_review_required: true,
+    role_scoped_length_override_requires_verified_contracts: true,
   },
   topics: taxonomy.topics,
   directions: taxonomy.directions,
@@ -120,6 +121,72 @@ for (const [voiceId, role] of Object.entries(policy.roles)) {
   }
   if (!role.voice_style_id || !role.voice_contract?.default_logic) {
     throw new Error(`${voiceId} is missing an enforceable voice contract`);
+  }
+  for (const [tierId, override] of Object.entries(role.length_tier_direction_overrides ?? {})) {
+    const supportedContracts = {
+      "official_explanation:very_short": {
+        directionId: "light_social_response", minimum: 3, maximum: 5,
+      },
+      "stylist:very_short": {
+        directionId: "light_social_response", minimum: 3, maximum: 5,
+      },
+      "evaluation_judgment:very_short": {
+        directionId: "size_clearance_question", minimum: 3, maximum: 5,
+      },
+      "evaluation_judgment:short": {
+        directionId: "size_clearance_question", minimum: 6, maximum: 16,
+      },
+      "space_advisor:very_short": {
+        directionId: "layout_circulation_question", minimum: 3, maximum: 5,
+      },
+      "space_advisor:short": {
+        directionId: "layout_circulation_question", minimum: 6, maximum: 16,
+      },
+      "global_design_observer:very_short": {
+        directionId: "detail_grounded_praise", minimum: 3, maximum: 5,
+      },
+      "global_design_observer:short": {
+        directionId: "detail_grounded_praise", minimum: 6, maximum: 16,
+      },
+    };
+    const supportedContract = supportedContracts[`${voiceId}:${tierId}`];
+    if (!supportedContract) {
+      throw new Error(`${voiceId} has an unsupported role-scoped length override`);
+    }
+    const { directionId: supportedDirection, minimum, maximum } = supportedContract;
+    if (
+      JSON.stringify(override.allowed_direction_ids) !== JSON.stringify([supportedDirection]) ||
+      override.direction_ranges?.[supportedDirection]?.minimum !== minimum ||
+      override.direction_ranges?.[supportedDirection]?.maximum !== maximum
+    ) {
+      throw new Error(
+        `${voiceId} ${tierId} override must remain ${supportedDirection} ${minimum}-${maximum} only`,
+      );
+    }
+    const requiredContracts = voiceId === "official_explanation"
+      ? [
+          "official_topic_context_verified",
+          "official_professional_value_context_verified",
+          "source_context_complete",
+        ]
+      : [
+          "production_taxonomy_verified",
+          "single_primary_speech_act_verified",
+          "source_context_complete",
+        ];
+    for (const required of requiredContracts) {
+      if (!override.requires?.includes(required)) {
+        throw new Error(`${voiceId} ${tierId} override is missing ${required}`);
+      }
+    }
+    if (
+      voiceId === "global_design_observer" &&
+      !override.requires?.includes("global_case_boundary_verified")
+    ) {
+      throw new Error(
+        `${voiceId} ${tierId} override is missing global_case_boundary_verified`,
+      );
+    }
   }
 }
 for (const [directionId, direction] of Object.entries(policy.directions)) {
