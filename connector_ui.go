@@ -35,6 +35,7 @@ const connectorLoginPage = `<!doctype html>
   <main>
     <div class="eyebrow">AI SEARCH OS · 独立连接器</div>
     <h1>小红书只读搜索登录</h1>
+    <p><a href="/research" style="color:#ff9ca8">打开离线素材研究台（无需登录）</a></p>
     <p class="subtitle">使用小红书 App 扫描二维码，并在手机端确认。</p>
     <img id="qr" alt="小红书登录二维码" hidden>
     <div id="status" role="status" aria-live="polite">正在生成二维码…</div>

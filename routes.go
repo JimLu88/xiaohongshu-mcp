@@ -23,6 +23,7 @@ func setupRoutes(appServer *AppServer) *gin.Engine {
 	// 本地人工登录页。页面只在内存中展示二维码，不持久化认证材料。
 	router.GET("/", appServer.loginPageHandler)
 	router.GET("/login", appServer.loginPageHandler)
+	router.GET("/research", appServer.researchPageHandler)
 
 	// 健康检查
 	router.GET("/health", healthHandler)

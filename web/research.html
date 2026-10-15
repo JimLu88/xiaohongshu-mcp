@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>小红书素材研究台</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f7f4ef;color:#292726;font:16px/1.6 system-ui,sans-serif}main{max-width:1180px;margin:auto;padding:36px 22px}h1{margin:0}h2{font-size:20px}button,input,select,textarea{font:inherit}button{cursor:pointer;padding:8px 14px;border:1px solid #c9c3ba;border-radius:8px;background:white;color:#292726}button:disabled{opacity:.45;cursor:default}input,select,textarea{padding:10px;border:1px solid #c9c3ba;border-radius:8px;background:white}textarea{width:100%}.toolbar{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:18px 0}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(275px,1fr));gap:16px}.card,details.import{background:white;border:1px solid #ded8d0;border-radius:12px;padding:18px}.card p{white-space:pre-wrap;overflow-wrap:anywhere}.card .excerpt{max-height:180px;overflow:auto}.muted{color:#6d675f}.tag{font-size:13px;color:#b24043}#status{min-height:26px}.card:has(input:checked){outline:2px solid #b24043}summary{cursor:pointer}label{display:inline-flex;gap:8px;align-items:center}#query{min-width:240px;flex:1}a{color:#ad353e}#copy{display:none}
+</style></head>
+<body><main>
+<p class="tag">LOCAL RESEARCH DESK</p><h1>小红书素材研究台</h1>
+<p class="muted">导入已有搜索结果，快速筛选、按热度排序、挑选参考素材并导出研究清单。只在本页处理文件，不登录、不联网、不发布。</p>
+<details class="import" open><summary>导入研究结果</summary>
+<div class="toolbar"><label>选择 JSON 文件 <input id="file" type="file" accept=".json,application/json"></label><button id="sample" type="button">先用示例体验</button></div>
+<label for="raw">或粘贴 JSON（数组，或包含 feeds/items 的结果）</label><textarea id="raw" rows="4" placeholder='[{"title":"素材标题","desc":"笔记摘要","id":"公开笔记ID","likes":12}]'></textarea>
+<button id="import" type="button">导入并替换当前列表</button><p class="muted">导入不会保存完整原始结果。只保留标题、摘要、作者、笔记 ID 与点赞数；刷新前可导出所选清单。</p>
+</details>
+<div class="toolbar"><input id="query" type="search" placeholder="按标题、摘要或作者搜索" aria-label="搜索素材"><select id="sort" aria-label="排序"><option value="source">原始顺序</option><option value="likes">点赞从高到低</option><option value="title">标题顺序</option></select><label><input id="selected-only" type="checkbox">只看已选</label></div>
+<div class="toolbar"><strong id="count" role="status"></strong><button id="export" type="button" disabled>导出所选研究清单</button><button id="copy-button" type="button" disabled>复制所选摘要</button><button id="clear" type="button" disabled>清空选择</button></div>
+<p id="status" role="status"></p><textarea id="copy" rows="6" aria-label="可复制的研究摘要" readonly></textarea><div id="cards" class="cards"></div>
+<p id="empty" class="muted">先导入已有结果，或使用示例。</p>
+</main><script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  let notes = [], selected = new Set();
+  const text = value => typeof value === 'string' ? value : typeof value === 'number' ? String(value) : '';
+  const likes = value => {
+    const raw = text(value).replace(/,/g, '').trim().toLowerCase();
+    const match = raw.match(/^(\d+(?:\.\d+)?)\s*([万wk]?)\+?$/);
+    if (!match) return null;
+    return Math.round(Number(match[1]) * (['万','w'].includes(match[2]) ? 10000 : match[2] === 'k' ? 1000 : 1));
+  };
+  function importNotes(payload) {
+    const root = payload && payload.data || payload;
+    const rows = Array.isArray(root) ? root : root && (root.feeds || root.items || root.notes);
+    if (!Array.isArray(rows)) throw new Error('需要笔记数组或 feeds/items/notes 数组。');
+    if (rows.length > 2000) throw new Error('每批最多 2000 条，请分批导入。');
+    const seen = new Set();
+    notes = rows.flatMap((row, index) => {
+      if (!row || typeof row !== 'object') return [];
+      const card = row.note_card || row.noteCard || row;
+      const title = text(card.display_title || card.displayTitle || card.title).slice(0, 300);
+      const body = text(card.desc || card.body || card.content).slice(0, 6000);
+      if (!title && !body) return [];
+      const id = text(row.id || row.note_id || card.note_id || card.noteId).slice(0, 100);
+      const dedupe = id || title + '\n' + body;
+      if (seen.has(dedupe)) return []; seen.add(dedupe);
+      const user = card.user || row.user || {};
+      const interaction = card.interact_info || card.interactInfo || {};
+      return [{key:index, id, title:title || '未命名素材', body, author:text(user.nickname || user.nick_name || row.author).slice(0,100), likes:likes(interaction.liked_count ?? interaction.likedCount ?? row.likes)}];
+    });
+    selected = new Set(); $('query').value = ''; $('selected-only').checked = false; $('raw').value = ''; $('copy').style.display = 'none';
+    $('status').textContent = '已导入 ' + notes.length + ' 条去重素材；原始字段没有保存。'; render();
+  }
+  function render() {
+    const query = $('query').value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    let visible = notes.filter(note => (!$('selected-only').checked || selected.has(note.key)) && query.every(word => (note.title+' '+note.body+' '+note.author).toLowerCase().includes(word)));
+    if ($('sort').value === 'likes') visible.sort((a,b) => (b.likes ?? -1) - (a.likes ?? -1));
+    if ($('sort').value === 'title') visible.sort((a,b) => a.title.localeCompare(b.title, 'zh-CN'));
+    $('cards').replaceChildren();
+    visible.forEach(note => {
+      const card = document.createElement('article'); card.className = 'card';
+      const pick = document.createElement('label'), input = document.createElement('input'); input.type = 'checkbox'; input.checked = selected.has(note.key);
+      input.addEventListener('change', () => { input.checked ? selected.add(note.key) : selected.delete(note.key); render(); });
+      pick.append(input, '加入研究清单'); card.append(pick);
+      const title = document.createElement('h2'); title.textContent = note.title; card.append(title);
+      const meta = document.createElement('p'); meta.className = 'muted'; meta.textContent = (note.author || '作者未记录') + ' · 点赞 ' + (note.likes === null ? '未记录' : note.likes.toLocaleString()); card.append(meta);
+      const body = document.createElement('p'); body.className = 'excerpt'; body.textContent = note.body || '无摘要'; card.append(body);
+      if (/^[a-zA-Z0-9_-]{8,100}$/.test(note.id)) { const link = document.createElement('a'); link.textContent = '查看公开原笔记'; link.href = 'https://www.xiaohongshu.com/explore/' + encodeURIComponent(note.id); link.target = '_blank'; link.rel = 'noreferrer'; card.append(link); }
+      $('cards').append(card);
+    });
+    $('count').textContent = '显示 '+visible.length+' / '+notes.length+' 条 · 已选 '+selected.size+' 条';
+    $('empty').hidden = Boolean(visible.length); $('empty').textContent = notes.length ? '没有匹配的素材，请调整搜索或取消“只看已选”。' : '先导入已有结果，或使用示例。';
+    ['export','copy-button','clear'].forEach(id => { $(id).disabled = !selected.size; });
+  }
+  const chosen = () => notes.filter(note => selected.has(note.key)).map(({key,...note}) => note);
+  $('import').onclick = () => { try { importNotes(JSON.parse($('raw').value)); } catch(error) { $('status').textContent = '未导入：'+error.message; } };
+  $('file').onchange = async event => {
+    const file = event.target.files[0]; if (!file) return;
+    try { if (file.size > 10000000) throw new Error('文件超过 10 MB，请分批。'); importNotes(JSON.parse(await file.text())); }
+    catch(error) { $('status').textContent = '未导入：'+error.message; }
+    event.target.value = '';
+  };
+  $('sample').onclick = () => importNotes([{title:'示例：小空间收纳方案',desc:'演示素材：比较柜体深度、通道宽度与生活动线。',author:'示例作者',likes:36},{title:'示例：日常木质家具保养',desc:'演示素材：整理清洁方式与维护频率。',author:'示例作者',likes:82}]);
+  ['query','sort','selected-only'].forEach(id => $(id).addEventListener('input', render));
+  $('clear').onclick = () => { selected.clear(); $('copy').style.display = 'none'; render(); };
+  $('export').onclick = () => {
+    const blob = new Blob([JSON.stringify({schema:'xhs-local-research.v1',notes:chosen()}, null, 2)], {type:'application/json'});
+    const url = URL.createObjectURL(blob), link = document.createElement('a'); link.href = url; link.download = '小红书研究清单.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+    $('status').textContent = '已准备所选素材下载；没有发布或发送。';
+  };
+  $('copy-button').onclick = async () => {
+    const value = chosen().map((note,index) => (index+1)+'. '+note.title+'\n'+note.body+'\n作者：'+(note.author||'未记录')).join('\n\n');
+    try { await navigator.clipboard.writeText(value); $('status').textContent = '已复制所选素材摘要。'; }
+    catch { $('copy').value = value; $('copy').style.display = 'block'; $('copy').focus(); $('copy').select(); $('status').textContent = '请手动复制下方摘要。'; }
+  };
+  render();
+})();
+</script></body></html>
